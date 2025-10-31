@@ -189,7 +189,11 @@ describe("scrapeByDateRange", () => {
 
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    const { scrapeByDateRange } = await import("./advanced-scraper");
+    const {
+      scrapeByDateRange,
+      RESULT_TABLE_TIMEOUT_MS,
+      RESULT_ROWS_TIMEOUT_MS,
+    } = await import("./advanced-scraper");
 
     const documents = await scrapeByDateRange({
       fromDate: "01/01/2024",
@@ -231,7 +235,11 @@ describe("scrapeByDateRange", () => {
 
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    const { scrapeByDateRange } = await import("./advanced-scraper");
+    const {
+      scrapeByDateRange,
+      RESULT_TABLE_TIMEOUT_MS,
+      RESULT_ROWS_TIMEOUT_MS,
+    } = await import("./advanced-scraper");
 
     const documents = await scrapeByDateRange({
       fromDate: "01/02/2024",
@@ -245,12 +253,12 @@ describe("scrapeByDateRange", () => {
 
     expect(listPage.waitForSelector).toHaveBeenCalledWith(
       "table tbody",
-      expect.objectContaining({ timeout: 60000 })
+      expect.objectContaining({ timeout: RESULT_TABLE_TIMEOUT_MS })
     );
 
     expect(listPage.waitForSelector).toHaveBeenCalledWith(
       "table tbody tr",
-      expect.objectContaining({ timeout: 5000 })
+      expect.objectContaining({ timeout: RESULT_ROWS_TIMEOUT_MS })
     );
 
     const hasEmptyLog = logSpy.mock.calls.some((call) =>

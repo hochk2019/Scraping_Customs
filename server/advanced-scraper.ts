@@ -13,14 +13,17 @@ const CUSTOMS_BASE_URL = "https://www.customs.gov.vn";
 const CUSTOMS_LIST_URL =
   "https://www.customs.gov.vn/index.jsp?pageId=8&cid=1294&LinhVuc=313";
 
+export const RESULT_TABLE_TIMEOUT_MS = 60_000;
+export const RESULT_ROWS_TIMEOUT_MS = 5_000;
+
 async function waitForResultRows(page: Page): Promise<void> {
   await page.waitForSelector("table tbody", {
-    timeout: 60000,
+    timeout: RESULT_TABLE_TIMEOUT_MS,
   });
 
   try {
     await page.waitForSelector("table tbody tr", {
-      timeout: 5000,
+      timeout: RESULT_ROWS_TIMEOUT_MS,
     });
   } catch (error) {
     const isTimeoutError =
