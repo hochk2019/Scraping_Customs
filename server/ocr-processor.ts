@@ -1,5 +1,5 @@
 import axios from "axios";
-import * as pdfParseModule from "pdf-parse";
+import { extractPdfText } from "./pdf-utils";
 // PDF parsing sẽ được xử lý thông qua server endpoint
 
 /**
@@ -17,48 +17,13 @@ interface OcrResult {
   processedAt: Date;
 }
 
-type PdfParseResult = { text?: string } | { [key: string]: unknown };
-
-type PdfParseFunction = (data: Buffer) => Promise<PdfParseResult>;
-
-const pdfParse: PdfParseFunction =
-  typeof (pdfParseModule as { default?: unknown }).default === "function"
-    ? ((pdfParseModule as { default: PdfParseFunction }).default)
-    : async (buffer: Buffer) => {
-        const ParserCtor = (pdfParseModule as {
-          PDFParse?: new (options: { data: Buffer }) => {
-            getText: () => Promise<PdfParseResult>;
-            destroy: () => Promise<void>;
-          };
-        }).PDFParse;
-
-        if (!ParserCtor) {
-          throw new Error("pdf-parse module không cung cấp PDFParse");
-        }
-
-        const parser = new ParserCtor({ data: buffer });
-        try {
-          return await parser.getText();
-        } finally {
-          try {
-            await parser.destroy();
-          } catch (destroyError) {
-            console.warn("[OCR] Lỗi giải phóng tài nguyên PDF:", destroyError);
-          }
-        }
-      };
-
 /**
  * Trích xuất văn bản từ PDF
  * Note: PDF parsing sẽ được xử lý trên server
  */
 export async function extractTextFromPdf(pdfBuffer: Buffer): Promise<string> {
   try {
-    const data = await pdfParse(pdfBuffer);
-    const candidate = (data as { text?: unknown }).text;
-    const rawText = typeof candidate === "string" ? candidate : "";
-
-    return rawText.normalize("NFC");
+    return await extractPdfText(pdfBuffer);
   } catch (error) {
     console.error("[OCR] Lỗi parse PDF:", error);
     throw error;

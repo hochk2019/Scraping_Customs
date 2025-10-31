@@ -1,9 +1,8 @@
 import fs from "fs";
 import path from "path";
 import XLSX from "xlsx";
-import * as pdfParse from "pdf-parse";
-import { Document } from "docx";
 import { parse as csvParse } from "csv-parse/sync";
+import { extractPdfText } from "./pdf-utils";
 
 /**
  * Xử lý file Excel
@@ -27,8 +26,7 @@ export async function processExcelFile(filePath: string): Promise<any[]> {
 export async function processPdfFile(filePath: string): Promise<string> {
   try {
     const fileBuffer = fs.readFileSync(filePath);
-    const pdfData = await (pdfParse as any).default(fileBuffer);
-    return pdfData.text;
+    return await extractPdfText(fileBuffer);
   } catch (error) {
     console.error("[FileProcessor] Failed to process PDF file:", error);
     throw error;
