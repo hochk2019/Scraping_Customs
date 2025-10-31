@@ -14,9 +14,35 @@ const CUSTOMS_LIST_URL =
   "https://www.customs.gov.vn/index.jsp?pageId=8&cid=1294&LinhVuc=313";
 
 async function waitForResultRows(page: Page): Promise<void> {
-  await page.waitForSelector("table tbody tr", {
+  await page.waitForSelector("table tbody", {
     timeout: 60000,
   });
+
+  try {
+    await page.waitForSelector("table tbody tr", {
+      timeout: 5000,
+    });
+  } catch (error) {
+    const isTimeoutError =
+      error instanceof Error &&
+      (error.name === "TimeoutError" || /timeout/i.test(error.message));
+
+    if (!isTimeoutError) {
+      throw error;
+    }
+
+    const hasRows = await page.evaluate(() => {
+      return document.querySelectorAll("table tbody tr").length > 0;
+    });
+
+    if (hasRows) {
+      throw error;
+    }
+
+    console.log(
+      "[Scraper] Không tìm thấy dòng dữ liệu trong bảng kết quả, tiếp tục"
+    );
+  }
 }
 
 interface ScraperOptions {

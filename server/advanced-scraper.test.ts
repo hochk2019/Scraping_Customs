@@ -11,7 +11,7 @@ const CUSTOMS_BASE_URL = "https://www.customs.gov.vn";
 const CUSTOMS_LIST_URL =
   "https://www.customs.gov.vn/index.jsp?pageId=8&cid=1294&LinhVuc=313";
 
-const mockListPages = [
+const defaultListPages = [
   {
     url: `${CUSTOMS_LIST_URL}&page=1`,
     links: ["/detail/1", "/detail/2"],
@@ -23,6 +23,22 @@ const mockListPages = [
     hasNext: false,
   },
 ];
+
+let mockListPages = defaultListPages.map((page) => ({
+  ...page,
+  links: [...page.links],
+}));
+
+function resetMockListPages() {
+  mockListPages = defaultListPages.map((page) => ({
+    ...page,
+    links: [...page.links],
+  }));
+}
+
+function setMockListPages(pages: typeof mockListPages) {
+  mockListPages = pages;
+}
 
 const detailData: Record<string, any> = {
   [`${CUSTOMS_BASE_URL}/detail/1`]: {
@@ -91,6 +107,10 @@ function createListPage() {
         return undefined;
       }
 
+      if (source.includes('querySelectorAll("table tbody tr").length > 0')) {
+        return (mockListPages[currentIndex]?.links.length ?? 0) > 0;
+      }
+
       return undefined;
     }),
     waitForNavigation: vi.fn(async () => {
@@ -100,7 +120,22 @@ function createListPage() {
       }
       nextRequested = false;
     }),
-    waitForSelector: vi.fn(async () => {}),
+    waitForSelector: vi.fn(async (selector: string, options?: any) => {
+      if (selector === "table tbody") {
+        return;
+      }
+
+      if (selector === "table tbody tr") {
+        const hasRows =
+          (mockListPages[currentIndex]?.links.length ?? 0) > 0;
+
+        if (!hasRows) {
+          const error = new Error("Timeout");
+          (error as Error & { name: string }).name = "TimeoutError";
+          throw error;
+        }
+      }
+    }),
     url: () => currentUrl,
     $$: vi.fn(async () => mockDateInputs),
   };
@@ -145,6 +180,7 @@ describe("scrapeByDateRange", () => {
   afterEach(() => {
     vi.clearAllMocks();
     launchMock.mockReset();
+    resetMockListPages();
   });
 
   test("đọc đủ dữ liệu qua nhiều trang và log chuyển trang", async () => {
@@ -177,6 +213,51 @@ describe("scrapeByDateRange", () => {
 
     const listPage = browserStub.__listPage as ReturnType<typeof createListPage>;
     expect(listPage.waitForSelector).toHaveBeenCalled();
+
+    logSpy.mockRestore();
+  });
+
+  test("kết thúc an toàn khi không có dữ liệu", async () => {
+    setMockListPages([
+      {
+        url: `${CUSTOMS_LIST_URL}&page=1`,
+        links: [],
+        hasNext: false,
+      },
+    ]);
+
+    const browserStub = createBrowserStub();
+    launchMock.mockResolvedValue(browserStub as unknown as any);
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const { scrapeByDateRange } = await import("./advanced-scraper");
+
+    const documents = await scrapeByDateRange({
+      fromDate: "01/02/2024",
+      toDate: "29/02/2024",
+    });
+
+    expect(documents).toHaveLength(0);
+    expect(browserStub.close).toHaveBeenCalled();
+
+    const listPage = browserStub.__listPage as ReturnType<typeof createListPage>;
+
+    expect(listPage.waitForSelector).toHaveBeenCalledWith(
+      "table tbody",
+      expect.objectContaining({ timeout: 60000 })
+    );
+
+    expect(listPage.waitForSelector).toHaveBeenCalledWith(
+      "table tbody tr",
+      expect.objectContaining({ timeout: 5000 })
+    );
+
+    const hasEmptyLog = logSpy.mock.calls.some((call) =>
+      call[0]?.includes("Không tìm thấy dòng dữ liệu")
+    );
+
+    expect(hasEmptyLog).toBe(true);
 
     logSpy.mockRestore();
   });
