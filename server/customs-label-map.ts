@@ -110,17 +110,84 @@ function parseLabelConfig(
   return JSON.parse(content) as Record<string, unknown> | undefined;
 }
 
-export const DETAIL_LABEL_MAP: Readonly<Record<string, DetailFieldKey>> =
-  Object.freeze({
+function buildDetailLabelMap(): Readonly<Record<string, DetailFieldKey>> {
+  return Object.freeze({
     ...DEFAULT_DETAIL_LABEL_MAP,
     ...loadExternalOverrides(),
   });
+}
+
+let detailLabelMap: Readonly<Record<string, DetailFieldKey>> =
+  buildDetailLabelMap();
+
+let reloadTimer: NodeJS.Timeout | undefined;
+
+function readReloadIntervalFromEnv(): number | undefined {
+  const raw = process.env.CUSTOMS_LABEL_MAP_RELOAD_INTERVAL_MS;
+  if (!raw) {
+    return undefined;
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    console.warn(
+      `[CustomsLabelMap] Giá trị CUSTOMS_LABEL_MAP_RELOAD_INTERVAL_MS không hợp lệ: ${raw}`
+    );
+    return undefined;
+  }
+
+  return parsed;
+}
+
+export function reloadDetailLabelMap(): Readonly<Record<string, DetailFieldKey>> {
+  detailLabelMap = buildDetailLabelMap();
+  return detailLabelMap;
+}
+
+export function startDetailLabelMapReloader(
+  intervalMs: number
+): void {
+  if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
+    console.warn(
+      `[CustomsLabelMap] Khoảng thời gian reload không hợp lệ: ${intervalMs}`
+    );
+    return;
+  }
+
+  if (reloadTimer) {
+    clearInterval(reloadTimer);
+  }
+
+  reloadTimer = setInterval(() => {
+    try {
+      reloadDetailLabelMap();
+    } catch (error) {
+      console.error("[CustomsLabelMap] Lỗi khi reload cấu hình nhãn:", error);
+    }
+  }, intervalMs);
+
+  if (typeof reloadTimer.unref === "function") {
+    reloadTimer.unref();
+  }
+}
+
+export function stopDetailLabelMapReloader(): void {
+  if (reloadTimer) {
+    clearInterval(reloadTimer);
+    reloadTimer = undefined;
+  }
+}
+
+const autoReloadInterval = readReloadIntervalFromEnv();
+if (autoReloadInterval !== undefined) {
+  startDetailLabelMapReloader(autoReloadInterval);
+}
 
 export function normalizeDetailLabel(label: string): DetailFieldKey | undefined {
   const normalized = normalizeLabelKey(label);
-  return DETAIL_LABEL_MAP[normalized];
+  return detailLabelMap[normalized];
 }
 
 export function getDetailLabelMap(): Readonly<Record<string, DetailFieldKey>> {
-  return DETAIL_LABEL_MAP;
+  return detailLabelMap;
 }
