@@ -1,4 +1,5 @@
 import axios from "axios";
+import { extractPdfText } from "./pdf-utils";
 // PDF parsing sẽ được xử lý thông qua server endpoint
 
 /**
@@ -21,8 +22,12 @@ interface OcrResult {
  * Note: PDF parsing sẽ được xử lý trên server
  */
 export async function extractTextFromPdf(pdfBuffer: Buffer): Promise<string> {
-  // Placeholder - sẽ được implement với pdf-parse
-  return "";
+  try {
+    return await extractPdfText(pdfBuffer);
+  } catch (error) {
+    console.error("[OCR] Lỗi parse PDF:", error);
+    throw error;
+  }
 }
 
 /**
@@ -250,6 +255,11 @@ export async function processOcr(
 
     // Bước 2: Trích xuất văn bản
     const rawText = await extractTextFromPdf(pdfBuffer);
+    const trimmedText = rawText.trim();
+
+    if (!trimmedText) {
+      console.warn(`[OCR] Văn bản trích xuất rỗng cho ${fileName}`);
+    }
 
     // Bước 3: Trích xuất HS code
     const extractedHsCodes = extractHsCodesFromText(rawText);
@@ -258,10 +268,14 @@ export async function processOcr(
     const extractedProductNames = extractProductNamesFromText(rawText);
 
     // Bước 5: Tính toán độ tin cậy
-    const confidence = Math.min(
-      1,
-      (extractedHsCodes.length + extractedProductNames.length) / 10
-    );
+    const totalIndicators =
+      extractedHsCodes.length + extractedProductNames.length;
+    const wordCount = trimmedText ? trimmedText.split(/\s+/).length : 0;
+    const denominator = Math.max(wordCount, 10);
+    const confidence =
+      totalIndicators === 0
+        ? 0
+        : Math.min(1, totalIndicators / denominator);
 
     const result: OcrResult = {
       documentId,
