@@ -1,4 +1,5 @@
-import puppeteer, { Browser, Page } from "puppeteer";
+import puppeteer from "puppeteer";
+import type { Browser, Page } from "puppeteer";
 import axios from "axios";
 import { retryWithBackoff, RetryOptions } from "./retry-utils";
 
@@ -11,6 +12,41 @@ import { retryWithBackoff, RetryOptions } from "./retry-utils";
 const CUSTOMS_BASE_URL = "https://www.customs.gov.vn";
 const CUSTOMS_LIST_URL =
   "https://www.customs.gov.vn/index.jsp?pageId=8&cid=1294&LinhVuc=313";
+
+export const RESULT_TABLE_TIMEOUT_MS = 60_000;
+export const RESULT_ROWS_TIMEOUT_MS = 5_000;
+
+async function waitForResultRows(page: Page): Promise<void> {
+  await page.waitForSelector("table tbody", {
+    timeout: RESULT_TABLE_TIMEOUT_MS,
+  });
+
+  try {
+    await page.waitForSelector("table tbody tr", {
+      timeout: RESULT_ROWS_TIMEOUT_MS,
+    });
+  } catch (error) {
+    const isTimeoutError =
+      error instanceof Error &&
+      (error.name === "TimeoutError" || /timeout/i.test(error.message));
+
+    if (!isTimeoutError) {
+      throw error;
+    }
+
+    const hasRows = await page.evaluate(() => {
+      return document.querySelectorAll("table tbody tr").length > 0;
+    });
+
+    if (hasRows) {
+      throw error;
+    }
+
+    console.log(
+      "[Scraper] Không tìm thấy dòng dữ liệu trong bảng kết quả, tiếp tục"
+    );
+  }
+}
 
 interface ScraperOptions {
   fromDate: string; // dd/mm/yyyy
@@ -135,9 +171,17 @@ export async function scrapeByDateRange(
     const allDocuments: ScrapedDocument[] = [];
     let currentPage = 1;
     const maxPages = options.maxPages || 10;
+    let listUrl = page.url();
+
+    if (!browser) {
+      throw new Error("Browser chưa được khởi tạo");
+    }
 
     while (currentPage <= maxPages) {
-      console.log(`[Scraper] Scraping trang ${currentPage}`);
+      listUrl = page.url();
+      console.log(`[Scraper] Scraping trang ${currentPage}: ${listUrl}`);
+
+      await waitForResultRows(page);
 
       // Trích xuất các liên kết từ trang hiện tại
       const documentLinks = await page.evaluate(() => {
@@ -159,7 +203,7 @@ export async function scrapeByDateRange(
           const detailUrl = link.startsWith("http")
             ? link
             : `${CUSTOMS_BASE_URL}${link}`;
-          const doc = await scrapeDetailPage(page, detailUrl);
+          const doc = await scrapeDetailPage(browser, detailUrl);
           if (doc) {
             allDocuments.push(doc);
           }
@@ -172,6 +216,8 @@ export async function scrapeByDateRange(
           await new Promise((resolve) => setTimeout(resolve, options.delay));
         }
       }
+
+      await waitForResultRows(page);
 
       // Chuyển sang trang tiếp theo
       const hasNextPage = await page.evaluate(() => {
@@ -191,8 +237,11 @@ export async function scrapeByDateRange(
         }
       });
       await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 60000 });
+      await waitForResultRows(page);
 
       currentPage++;
+      listUrl = page.url();
+      console.log(`[Scraper] Đã chuyển tới trang ${currentPage}: ${listUrl}`);
     }
 
     console.log(
@@ -233,14 +282,13 @@ async function fillDateRange(
  * Scrape trang chi tiết
  */
 async function scrapeDetailPage(
-  page: Page,
+  browser: Browser,
   detailUrl: string
 ): Promise<ScrapedDocument | null> {
+  const newPage = await browser.newPage();
   try {
     console.log(`[Scraper] Scraping chi tiết: ${detailUrl}`);
 
-    // Truy cập trang chi tiết trong tab hiện tại (tối ưu hơn mở tab mới)
-    const newPage = page;
     await newPage.goto(detailUrl, { waitUntil: "networkidle2", timeout: 60000 });
 
     // Trích xuất thông tin
@@ -296,9 +344,6 @@ async function scrapeDetailPage(
       }
     }
 
-    // Không close tab hiện tại vì ta dùng tab hiện tại
-    // await newPage.close();
-
     return {
       documentNumber: documentData.documentNumber || "",
       title: documentData.title || "",
@@ -316,6 +361,8 @@ async function scrapeDetailPage(
   } catch (error) {
     console.error(`[Scraper] Lỗi scraping chi tiết: ${detailUrl}`, error);
     return null;
+  } finally {
+    await newPage.close();
   }
 }
 
