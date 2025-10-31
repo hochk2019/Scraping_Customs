@@ -1,5 +1,9 @@
 import axios from "axios";
 import { load as cheerioLoad } from "cheerio";
+import {
+  DetailFieldKey,
+  normalizeDetailLabel,
+} from "./customs-label-map";
 // Database operations sẽ được xử lý thông qua API endpoint
 
 /**
@@ -111,7 +115,7 @@ export async function scrapeCustomsDocuments(
           const detail$ = cheerioLoad(detailResponse.data);
 
           const detailRows = detail$("table tr").toArray();
-          const detailData: Record<string, string> = {};
+          const detailData: Partial<Record<DetailFieldKey, string>> = {};
           let fileUrl = "";
           let fileName = "";
 
@@ -124,8 +128,10 @@ export async function scrapeCustomsDocuments(
             const valueCell = detail$(detailCells[1]);
             const value = valueCell.text().trim();
 
-            if (label) {
-              detailData[label] = value;
+            const normalizedLabel = normalizeDetailLabel(label);
+
+            if (normalizedLabel) {
+              detailData[normalizedLabel] = value;
             }
 
             if (label.startsWith("Tải tệp nội dung toàn văn")) {
@@ -142,30 +148,33 @@ export async function scrapeCustomsDocuments(
             }
           }
 
-          const documentNumber = (detailData["Số hiệu"] || fallbackDocumentNumber).trim();
+          const documentNumber = (
+            detailData.documentNumber || fallbackDocumentNumber
+          ).trim();
           if (!documentNumber) {
             continue;
           }
 
-          const documentType = (detailData["Loại văn bản"] || "Thông báo").trim();
+          const documentType = (
+            detailData.documentType || "Thông báo"
+          ).trim();
           const issuingAgency = (
-            detailData["Cơ quan ban hành"] ||
+            detailData.issuingAgency ||
             fallbackIssuingAgency ||
             "Cục Hải quan"
           ).trim();
           const issueDate = (
-            detailData["Ngày ban hành"] ||
+            detailData.issueDate ||
             fallbackIssueDate ||
             new Date().toLocaleDateString("vi-VN")
           ).trim();
           const signer = (
-            detailData["Người ký"] ||
+            detailData.signer ||
             fallbackIssuingAgency ||
             "Cục Hải quan"
           ).trim();
           const title = (
-            detailData["Trích yếu nội dung"] ||
-            detailData["Trích yêu nội dung"] ||
+            detailData.title ||
             fallbackTitle ||
             "Thông báo xác định trước mã số"
           ).trim();
