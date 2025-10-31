@@ -13,6 +13,12 @@ const CUSTOMS_BASE_URL = "https://www.customs.gov.vn";
 const CUSTOMS_LIST_URL =
   "https://www.customs.gov.vn/index.jsp?pageId=8&cid=1294&LinhVuc=313";
 
+async function waitForResultRows(page: Page): Promise<void> {
+  await page.waitForSelector("table tbody tr", {
+    timeout: 60000,
+  });
+}
+
 interface ScraperOptions {
   fromDate: string; // dd/mm/yyyy
   toDate: string; // dd/mm/yyyy
@@ -146,9 +152,7 @@ export async function scrapeByDateRange(
       listUrl = page.url();
       console.log(`[Scraper] Scraping trang ${currentPage}: ${listUrl}`);
 
-      await page.waitForSelector("table tbody tr", {
-        timeout: 60000,
-      });
+      await waitForResultRows(page);
 
       // Trích xuất các liên kết từ trang hiện tại
       const documentLinks = await page.evaluate(() => {
@@ -184,9 +188,7 @@ export async function scrapeByDateRange(
         }
       }
 
-      await page.waitForSelector("table tbody tr", {
-        timeout: 60000,
-      });
+      await waitForResultRows(page);
 
       // Chuyển sang trang tiếp theo
       const hasNextPage = await page.evaluate(() => {
@@ -206,9 +208,7 @@ export async function scrapeByDateRange(
         }
       });
       await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 60000 });
-      await page.waitForSelector("table tbody tr", {
-        timeout: 60000,
-      });
+      await waitForResultRows(page);
 
       currentPage++;
       listUrl = page.url();
