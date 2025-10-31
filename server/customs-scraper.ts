@@ -1,5 +1,9 @@
 import axios from "axios";
 import { load as cheerioLoad } from "cheerio";
+import {
+  DetailFieldKey,
+  normalizeDetailLabel,
+} from "./customs-label-map";
 // Database operations sẽ được xử lý thông qua API endpoint
 
 /**
@@ -23,75 +27,202 @@ interface ScrapedDocument {
   detailUrl?: string;
 }
 
+interface ScrapeOptions {
+  maxPages?: number;
+}
+
 /**
  * Thu thập 10 tài liệu từ trang Hải quan
  */
-export async function scrapeCustomsDocuments(): Promise<ScrapedDocument[]> {
+export async function scrapeCustomsDocuments(
+  options: ScrapeOptions = {}
+): Promise<ScrapedDocument[]> {
   try {
     console.log("[Scraper] Bắt đầu scraping từ trang Hải quan");
 
-    const response = await axios.get(CUSTOMS_URL, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      },
-    });
-    const $ = cheerioLoad(response.data);
+    const headers = {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    };
 
     const documents: ScrapedDocument[] = [];
+    const pageQueue: string[] = [CUSTOMS_URL];
+    const visitedPages = new Set<string>();
+    const maxPages = Number.isFinite(options.maxPages)
+      ? Math.max(0, Number(options.maxPages))
+      : undefined;
 
-    // Trích xuất từ bảng kết quả - tìm tất cả hàng trong bảng
-    $("table tbody tr").each((index, element) => {
-      if (index >= 10) return; // Chỉ lấy 10 tài liệu
+    while (pageQueue.length > 0) {
+      if (maxPages !== undefined && visitedPages.size >= maxPages) {
+        console.log(
+          `[Scraper] Đã đạt giới hạn số trang cho phép (${maxPages})`
+        );
+        break;
+      }
 
-      try {
-        const cells = $(element).find("td");
-        if (cells.length < 4) return; // Bỏ qua nếu không đủ cột
+      const pageUrl = pageQueue.shift();
+      if (!pageUrl || visitedPages.has(pageUrl)) {
+        continue;
+      }
 
-        // Trích xuất thông tin từ các cột
-        const documentNumberCell = $(cells[0]);
-        const issuingAgencyCell = $(cells[1]);
-        const issueDateCell = $(cells[2]);
-        const titleCell = $(cells[3]);
+      visitedPages.add(pageUrl);
 
-        const documentNumber = documentNumberCell.text().trim();
-        const issuingAgency = issuingAgencyCell.text().trim();
-        const issueDate = issueDateCell.text().trim();
-        const title = titleCell.text().trim();
+      console.log(`[Scraper] Đang tải trang danh sách: ${pageUrl}`);
+      const response = await axios.get(pageUrl, { headers, proxy: false });
+      const $ = cheerioLoad(response.data);
 
-        // Lấy link chi tiết từ cột đầu tiên hoặc cột tiêu đề
-        let detailLink =
-          documentNumberCell.find("a").attr("href") ||
-          titleCell.find("a").attr("href") ||
-          "";
-        const detailUrl = detailLink.startsWith("http")
-          ? detailLink
-          : detailLink
-            ? `${BASE_URL}${detailLink}`
-            : `${BASE_URL}/index.jsp?pageId=8&cid=1294&LinhVuc=313`;
+      const rows = $("table tbody tr").toArray();
 
-        // Tạo file URL (giả định PDF)
-        const fileUrl = `${detailUrl}?format=pdf`;
+      for (const element of rows) {
+        try {
+          const cells = $(element).find("td");
+          if (cells.length < 4) continue; // Bỏ qua nếu không đủ cột
 
-        if (documentNumber) {
+          const documentNumberCell = $(cells[0]);
+          const issuingAgencyCell = $(cells[1]);
+          const issueDateCell = $(cells[2]);
+          const titleCell = $(cells[3]);
+
+          const fallbackDocumentNumber = documentNumberCell.text().trim();
+          const fallbackIssuingAgency = issuingAgencyCell.text().trim();
+          const fallbackIssueDate = issueDateCell.text().trim();
+          const fallbackTitle = titleCell.text().trim();
+
+          const rawDetailLink =
+            documentNumberCell.find("a").attr("href") ||
+            titleCell.find("a").attr("href") ||
+            "";
+
+          if (!rawDetailLink) {
+            continue;
+          }
+
+          let detailUrl: string;
+          try {
+            detailUrl = new URL(rawDetailLink, BASE_URL).toString();
+          } catch {
+            detailUrl = `${BASE_URL}${rawDetailLink}`;
+          }
+
+          console.log(
+            `[Scraper] Đang tải trang chi tiết: ${fallbackDocumentNumber} -> ${detailUrl}`
+          );
+
+          const detailResponse = await axios.get(detailUrl, {
+            headers,
+            proxy: false,
+          });
+          const detail$ = cheerioLoad(detailResponse.data);
+
+          const detailRows = detail$("table tr").toArray();
+          const detailData: Partial<Record<DetailFieldKey, string>> = {};
+          let fileUrl = "";
+          let fileName = "";
+
+          for (const row of detailRows) {
+            const detailCells = detail$(row).find("td");
+            if (detailCells.length < 2) continue;
+
+            const rawLabel = detail$(detailCells[0]).text().trim();
+            const label = rawLabel.replace(/[:：]\s*$/, "");
+            const valueCell = detail$(detailCells[1]);
+            const value = valueCell.text().trim();
+
+            const normalizedLabel = normalizeDetailLabel(label);
+
+            if (normalizedLabel) {
+              detailData[normalizedLabel] = value;
+            }
+
+            if (label.startsWith("Tải tệp nội dung toàn văn")) {
+              const linkElement = valueCell.find("a[href]").first();
+              const href = linkElement.attr("href");
+              if (href) {
+                try {
+                  fileUrl = new URL(href, BASE_URL).toString();
+                } catch {
+                  fileUrl = `${BASE_URL}${href}`;
+                }
+              }
+              fileName = linkElement.text().trim() || fileName;
+            }
+          }
+
+          const documentNumber = (
+            detailData.documentNumber || fallbackDocumentNumber
+          ).trim();
+          if (!documentNumber) {
+            continue;
+          }
+
+          const documentType = (
+            detailData.documentType || "Thông báo"
+          ).trim();
+          const issuingAgency = (
+            detailData.issuingAgency ||
+            fallbackIssuingAgency ||
+            "Cục Hải quan"
+          ).trim();
+          const issueDate = (
+            detailData.issueDate ||
+            fallbackIssueDate ||
+            new Date().toLocaleDateString("vi-VN")
+          ).trim();
+          const signer = (
+            detailData.signer ||
+            fallbackIssuingAgency ||
+            "Cục Hải quan"
+          ).trim();
+          const title = (
+            detailData.title ||
+            fallbackTitle ||
+            "Thông báo xác định trước mã số"
+          ).trim();
+
+          const normalizedFileName = fileName.trim()
+            ? fileName.trim()
+            : fileUrl
+            ? decodeURIComponent(fileUrl.split("/").pop() || "")
+            : `${documentNumber}.pdf`;
+
           documents.push({
             documentNumber,
-            title: title || "Thông báo xác định trước mã số",
-            documentType: "Thông báo",
-            issuingAgency: issuingAgency || "Cục Hải quan",
-            issueDate: issueDate || new Date().toLocaleDateString("vi-VN"),
-            signer: issuingAgency || "Cục Hải quan",
+            title,
+            documentType,
+            issuingAgency,
+            issueDate,
+            signer,
             fileUrl,
-            fileName: `${documentNumber}.pdf`,
+            fileName: normalizedFileName,
             detailUrl,
           });
 
           console.log(`[Scraper] Thu thập: ${documentNumber} - ${title}`);
+        } catch (error) {
+          console.error("[Scraper] Lỗi xử lý tài liệu:", error);
         }
-      } catch (error) {
-        console.error(`[Scraper] Lỗi xử lý hàng ${index}:`, error);
       }
-    });
+
+      // Thu thập các liên kết phân trang để xử lý tiếp
+      const paginationLinks = new Set<string>();
+      $("a[href*='pageId=8'][href*='page=']").each((_, element) => {
+        const href = $(element).attr("href");
+        if (!href || href.startsWith("javascript")) return;
+
+        try {
+          const pageLink = new URL(href, BASE_URL).toString();
+          paginationLinks.add(pageLink);
+        } catch (error) {
+          console.warn("[Scraper] Không thể phân tích liên kết phân trang:", error);
+        }
+      });
+
+      for (const link of paginationLinks) {
+        if (!visitedPages.has(link) && !pageQueue.includes(link)) {
+          pageQueue.push(link);
+        }
+      }
+    }
 
     console.log(`[Scraper] Thu thập thành công ${documents.length} tài liệu`);
     return documents;
@@ -114,6 +245,7 @@ export async function downloadPdf(url: string): Promise<Buffer> {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
       },
+      proxy: false,
     });
 
     console.log(`[Scraper] Tải PDF thành công: ${url}`);
