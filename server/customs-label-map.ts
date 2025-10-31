@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import type { FSWatcher } from "node:fs";
 import YAML from "yaml";
 
 export type DetailFieldKey =
@@ -40,15 +41,20 @@ function normalizeLabelKey(label: string): string {
   return label.trim().replace(/[:：]\s*$/, "");
 }
 
+let lastResolvedConfigPath: string | undefined;
+
 function loadExternalOverrides(): Record<string, DetailFieldKey> {
   const configPath = process.env.CUSTOMS_LABEL_MAP_PATH;
   if (!configPath) {
+    lastResolvedConfigPath = undefined;
     return {};
   }
 
   const resolvedPath = path.isAbsolute(configPath)
     ? configPath
     : path.resolve(process.cwd(), configPath);
+
+  lastResolvedConfigPath = resolvedPath;
 
   if (!fs.existsSync(resolvedPath)) {
     console.warn(
@@ -121,6 +127,10 @@ let detailLabelMap: Readonly<Record<string, DetailFieldKey>> =
   buildDetailLabelMap();
 
 let reloadTimer: NodeJS.Timeout | undefined;
+let fileWatcher: FSWatcher | undefined;
+let dirWatcher: FSWatcher | undefined;
+let watcherDebounce: NodeJS.Timeout | undefined;
+let currentWatchedPath: string | undefined;
 
 function readReloadIntervalFromEnv(): number | undefined {
   const raw = process.env.CUSTOMS_LABEL_MAP_RELOAD_INTERVAL_MS;
@@ -141,6 +151,7 @@ function readReloadIntervalFromEnv(): number | undefined {
 
 export function reloadDetailLabelMap(): Readonly<Record<string, DetailFieldKey>> {
   detailLabelMap = buildDetailLabelMap();
+  autoStartDetailLabelMapWatcher();
   return detailLabelMap;
 }
 
@@ -182,6 +193,148 @@ const autoReloadInterval = readReloadIntervalFromEnv();
 if (autoReloadInterval !== undefined) {
   startDetailLabelMapReloader(autoReloadInterval);
 }
+
+function clearWatcherDebounce(): void {
+  if (watcherDebounce) {
+    clearTimeout(watcherDebounce);
+    watcherDebounce = undefined;
+  }
+}
+
+function handleWatcherChange(): void {
+  if (watcherDebounce) {
+    return;
+  }
+
+  watcherDebounce = setTimeout(() => {
+    watcherDebounce = undefined;
+    try {
+      reloadDetailLabelMap();
+    } catch (error) {
+      console.error(
+        "[CustomsLabelMap] Lỗi khi reload cấu hình nhãn qua watcher:",
+        error
+      );
+    }
+  }, 50);
+
+  const timer = watcherDebounce as NodeJS.Timeout | undefined;
+  if (timer && typeof timer.unref === "function") {
+    timer.unref();
+  }
+}
+
+function attachDirectoryWatcher(targetPath: string): boolean {
+  const dirPath = path.dirname(targetPath);
+
+  try {
+    dirWatcher = fs.watch(
+      dirPath,
+      { persistent: false },
+      (eventType, filename) => {
+        if (!filename) {
+          handleWatcherChange();
+          return;
+        }
+
+        const normalized = path.resolve(dirPath, filename.toString());
+        if (normalized === targetPath) {
+          handleWatcherChange();
+        }
+      }
+    );
+
+    if (typeof dirWatcher.unref === "function") {
+      dirWatcher.unref();
+    }
+
+    return true;
+  } catch (error) {
+    console.error(
+      `[CustomsLabelMap] Không thể theo dõi thư mục chứa cấu hình tại ${dirPath}:`,
+      error
+    );
+
+    return false;
+  }
+}
+
+function attachFileWatcher(targetPath: string): boolean {
+  try {
+    fileWatcher = fs.watch(targetPath, { persistent: false }, () => {
+      handleWatcherChange();
+    });
+
+    if (typeof fileWatcher.unref === "function") {
+      fileWatcher.unref();
+    }
+
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    if (code !== "ENOENT") {
+      console.error(
+        `[CustomsLabelMap] Không thể theo dõi file cấu hình tại ${targetPath}:`,
+        error
+      );
+    }
+
+    return false;
+  }
+}
+
+export function startDetailLabelMapWatcher(targetPath?: string): void {
+  const resolved = targetPath ?? lastResolvedConfigPath;
+  if (!resolved) {
+    console.warn(
+      "[CustomsLabelMap] Không thể khởi động watcher vì thiếu đường dẫn cấu hình"
+    );
+    return;
+  }
+
+  stopDetailLabelMapWatcher();
+
+  let attached = attachDirectoryWatcher(resolved);
+
+  if (fs.existsSync(resolved)) {
+    attached = attachFileWatcher(resolved) || attached;
+  }
+
+  if (attached) {
+    currentWatchedPath = resolved;
+  } else {
+    currentWatchedPath = undefined;
+  }
+}
+
+export function stopDetailLabelMapWatcher(): void {
+  clearWatcherDebounce();
+
+  if (fileWatcher) {
+    fileWatcher.close();
+    fileWatcher = undefined;
+  }
+
+  if (dirWatcher) {
+    dirWatcher.close();
+    dirWatcher = undefined;
+  }
+
+  currentWatchedPath = undefined;
+}
+
+function autoStartDetailLabelMapWatcher(): void {
+  if (!lastResolvedConfigPath) {
+    stopDetailLabelMapWatcher();
+    return;
+  }
+
+  if (currentWatchedPath !== lastResolvedConfigPath) {
+    startDetailLabelMapWatcher(lastResolvedConfigPath);
+  }
+}
+
+autoStartDetailLabelMapWatcher();
 
 export function normalizeDetailLabel(label: string): DetailFieldKey | undefined {
   const normalized = normalizeLabelKey(label);

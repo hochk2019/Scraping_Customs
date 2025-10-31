@@ -15,6 +15,7 @@ afterEach(async () => {
   vi.useRealTimers();
   try {
     const module = await import("./customs-label-map");
+    module.stopDetailLabelMapWatcher();
     module.stopDetailLabelMapReloader();
   } catch {
     // Module có thể chưa được nạp trong ca kiểm thử.
@@ -183,6 +184,38 @@ describe("customs-label-map", () => {
       expect(module.normalizeDetailLabel("Trạng thái")).toBeUndefined();
 
       module.stopDetailLabelMapReloader();
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("theo dõi file cấu hình và reload ngay khi thay đổi", async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "label-watch-"));
+    const filePath = path.join(tempDir, "labels.json");
+
+    try {
+      fs.writeFileSync(
+        filePath,
+        JSON.stringify({ "Ban đầu": "documentNumber" }),
+        "utf8"
+      );
+
+      process.env.CUSTOMS_LABEL_MAP_PATH = filePath;
+      vi.resetModules();
+      const module = await import("./customs-label-map");
+
+      expect(module.normalizeDetailLabel("Ban đầu")).toBe("documentNumber");
+
+      fs.writeFileSync(
+        filePath,
+        JSON.stringify({ "Ngay lập tức": "title" }),
+        "utf8"
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      expect(module.normalizeDetailLabel("Ngay lập tức")).toBe("title");
+      expect(module.normalizeDetailLabel("Ban đầu")).toBeUndefined();
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
