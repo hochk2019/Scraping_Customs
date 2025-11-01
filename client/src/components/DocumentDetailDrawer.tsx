@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useCallback } from "react";
 import { toast } from "sonner";
 import {
   Drawer,
@@ -27,6 +27,7 @@ import {
   Clipboard,
   AlertCircle,
   Sparkles,
+  Loader2,
 } from "lucide-react";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
@@ -140,6 +141,23 @@ export function DocumentDetailDrawer({
   fallbackDocument,
 }: DocumentDetailDrawerProps) {
   const isOfflineDocument = Boolean(fallbackDocument?.isOffline);
+  const utils = trpc.useContext();
+  const processDocumentMutation = trpc.scraperPipeline.processDocument.useMutation({
+    onSuccess: async (result) => {
+      if (result?.success) {
+        toast.success("Đã chạy lại OCR và cập nhật dữ liệu thành công");
+        if (documentId) {
+          await utils.documents.getById.invalidate({ id: documentId });
+        }
+        await utils.documents.list.invalidate();
+      } else {
+        toast.error(result?.message ?? "Không thể chạy OCR");
+      }
+    },
+    onError: (error) => {
+      toast.error(error.message || "Không thể chạy OCR, vui lòng thử lại");
+    },
+  });
   const {
     data: document,
     isLoading,
@@ -190,6 +208,39 @@ export function DocumentDetailDrawer({
   };
 
   const tags = normalizeList((mergedDocument as DocumentDetail | null)?.tags ?? null);
+
+  const handleRunOcr = useCallback(async () => {
+    if (isOfflineDocument) {
+      toast.warning("Tài liệu ngoại tuyến không hỗ trợ chạy OCR");
+      return;
+    }
+
+    const effectiveId = (mergedDocument as DocumentDetail | null)?.id ?? documentId;
+    if (!effectiveId) {
+      toast.error("Không xác định được tài liệu để xử lý");
+      return;
+    }
+
+    if (!mergedDocument?.fileUrl) {
+      toast.error("Thiếu liên kết PDF gốc để chạy OCR");
+      return;
+    }
+
+    const payload = {
+      documentId: String(effectiveId),
+      fileName:
+        (mergedDocument as DocumentDetail | null)?.fileName ||
+        `${mergedDocument?.documentNumber ?? "tai-lieu"}.pdf`,
+      fileUrl: mergedDocument.fileUrl,
+    };
+
+    await processDocumentMutation.mutateAsync(payload);
+  }, [
+    documentId,
+    isOfflineDocument,
+    mergedDocument,
+    processDocumentMutation,
+  ]);
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange} direction="right">
@@ -325,6 +376,25 @@ export function DocumentDetailDrawer({
               Sao chép liên kết
             </Button>
           </div>
+          <Button
+            variant="default"
+            size="sm"
+            className="w-full sm:w-auto"
+            onClick={handleRunOcr}
+            disabled={
+              isOfflineDocument ||
+              !mergedDocument?.fileUrl ||
+              processDocumentMutation.isLoading ||
+              (!documentId && !(mergedDocument as DocumentDetail | null)?.id)
+            }
+          >
+            {processDocumentMutation.isLoading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="mr-2 h-4 w-4" />
+            )}
+            Chạy lại OCR
+          </Button>
           <DrawerClose asChild>
             <Button variant="ghost" size="sm">
               Đóng

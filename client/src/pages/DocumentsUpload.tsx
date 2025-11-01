@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Upload, FileText, AlertCircle, CheckCircle2 } from "lucide-react";
+import { LinkProcessingPanel } from "@/components/LinkProcessingPanel";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 
@@ -302,6 +303,8 @@ export default function DocumentsUpload() {
             </form>
           </CardContent>
         </Card>
+
+        <LinkProcessingPanel onDocumentSaved={() => refetch()} />
 
         {/* Documents List */}
         <Card>

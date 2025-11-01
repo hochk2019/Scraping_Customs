@@ -30,6 +30,7 @@ import {
   saveUploadedFile,
   updateUploadedFileStatus,
   getUserUploadedFilesWithTotal,
+  saveUploadedFileAnalysis,
 } from "./db";
 import { scrapeCustomsData } from "./scraper";
 import { adminRouter } from "./admin-router";
@@ -38,6 +39,7 @@ import { hsCodeRouter } from "./hsCode-router";
 import { scrapingHistoryRouter } from "./scraping-history-router";
 import { progressRouter } from "./progress-router";
 import { scrapingChartsRouter } from "./scraping-charts-router";
+import { scraperRouter as pipelineRouter } from "./scraper-router";
 import {
   createScheduledTask,
   stopScheduledTask,
@@ -259,7 +261,7 @@ const fileUploadRouter = router({
         if (uploadedFileId) {
           await updateUploadedFileStatus(
             uploadedFileId,
-            "processed",
+            "completed",
             (extractedData.hsCodes?.length ?? 0) + (extractedData.productNames?.length ?? 0),
           );
         }
@@ -282,6 +284,10 @@ const fileUploadRouter = router({
         } catch (error) {
           console.warn("[API] AI analysis failed, using default suggestions:", error);
           aiAnalysis = await analyzeExtractedData(extractedData);
+        }
+
+        if (uploadedFileId) {
+          await saveUploadedFileAnalysis(uploadedFileId, aiAnalysis, extractedData);
         }
 
         return {
@@ -408,6 +414,7 @@ export const appRouter = router({
   scrapingHistory: scrapingHistoryRouter,
   progress: progressRouter,
   scrapingCharts: scrapingChartsRouter,
+  scraperPipeline: pipelineRouter,
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {

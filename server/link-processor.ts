@@ -1,5 +1,5 @@
 import * as pdfParse from "pdf-parse";
-import { extractKeyDataFromText } from "./file-processor";
+import { extractKeyDataFromText, analyzeExtractedData } from "./file-processor";
 import { getWithNetwork } from "./network-client";
 
 /**
@@ -71,6 +71,8 @@ export async function processLink(
     textLength: number;
     wordCount: number;
   };
+  aiAnalysis?: any;
+  rawText?: string;
   error?: string;
   processedAt: Date;
 }> {
@@ -92,6 +94,11 @@ export async function processLink(
     // Trích xuất dữ liệu
     const extractedData = extractKeyDataFromText(result.text);
 
+    const aiAnalysis = await analyzeExtractedData({
+      hsCodes: extractedData.hsCodes,
+      productNames: extractedData.productNames,
+    });
+
     return {
       documentNumber,
       documentTitle,
@@ -103,6 +110,8 @@ export async function processLink(
         textLength: extractedData.textLength,
         wordCount: extractedData.wordCount,
       },
+      aiAnalysis,
+      rawText: result.text,
       processedAt: new Date(),
     };
   } catch (error) {

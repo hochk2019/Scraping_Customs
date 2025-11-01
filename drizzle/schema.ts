@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, uniqueIndex } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -268,6 +268,29 @@ export const uploadedFiles = mysqlTable("uploadedFiles", {
 
 export type UploadedFile = typeof uploadedFiles.$inferSelect;
 export type InsertUploadedFile = typeof uploadedFiles.$inferInsert;
+
+/**
+ * Bảng lưu trữ kết quả phân tích AI cho file tải lên
+ */
+export const uploadedFileAnalyses = mysqlTable(
+  "uploadedFileAnalyses",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    uploadedFileId: int("uploadedFileId").notNull(),
+    analysisJson: text("analysisJson"),
+    extractedDataJson: text("extractedDataJson"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    uploadedFileUnique: uniqueIndex("uploadedFileAnalyses_uploadedFileId_unique").on(
+      table.uploadedFileId,
+    ),
+  }),
+);
+
+export type UploadedFileAnalysis = typeof uploadedFileAnalyses.$inferSelect;
+export type InsertUploadedFileAnalysis = typeof uploadedFileAnalyses.$inferInsert;
 
 
 /**

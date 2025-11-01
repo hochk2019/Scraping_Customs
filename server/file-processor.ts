@@ -200,15 +200,31 @@ export async function suggestHsCodeWithAI(
   }
 
   try {
-    const prompt = `Based on the product name "${productName}", suggest the most likely HS (Harmonized System) codes. 
+    const prompt = `Based on the product name "${productName}", suggest the most likely HS (Harmonized System) codes.
     Return a JSON array with objects containing: hsCode (string), confidence (0-1), description (string).
     Suggest top 3 most likely codes.`;
 
     const response = await llmFunction(prompt);
-    
+
     try {
       const suggestions = JSON.parse(response);
-      return Array.isArray(suggestions) ? suggestions.slice(0, 3) : generateDefaultHsSuggestions(productName);
+      if (!Array.isArray(suggestions)) {
+        return generateDefaultHsSuggestions(productName);
+      }
+
+      const sanitized = suggestions
+        .map((item: any) => ({
+          hsCode: String(item.hsCode ?? "").trim(),
+          confidence: Math.max(0, Math.min(1, Number(item.confidence ?? 0))),
+          description: String(item.description ?? "Đề xuất từ AI"),
+        }))
+        .filter((item) => item.hsCode);
+
+      if (!sanitized.length) {
+        return generateDefaultHsSuggestions(productName);
+      }
+
+      return sanitized.slice(0, 3);
     } catch {
       return generateDefaultHsSuggestions(productName);
     }
@@ -221,49 +237,119 @@ export async function suggestHsCodeWithAI(
 /**
  * Tạo các gợi ý HS code mặc định dựa trên tên hàng
  */
+const HS_SUGGESTION_LIBRARY: Array<{
+  hsCode: string;
+  keywords: string[];
+  description: string;
+}> = [
+  {
+    hsCode: "8517",
+    keywords: ["điện thoại", "smartphone", "viễn thông", "thiết bị mạng"],
+    description: "Thiết bị viễn thông, điện thoại di động",
+  },
+  {
+    hsCode: "8471",
+    keywords: ["máy tính", "laptop", "pc", "máy chủ", "computer"],
+    description: "Máy xử lý dữ liệu tự động",
+  },
+  {
+    hsCode: "6204",
+    keywords: ["quần áo", "váy", "đầm", "dệt may", "vest"],
+    description: "Quần áo dệt kim dành cho nữ",
+  },
+  {
+    hsCode: "6403",
+    keywords: ["giày", "dép", "giày da", "footwear"],
+    description: "Giày dép bề mặt da",
+  },
+  {
+    hsCode: "2203",
+    keywords: ["bia", "beer", "đồ uống có cồn"],
+    description: "Đồ uống có cồn từ mạch nha",
+  },
+  {
+    hsCode: "0901",
+    keywords: ["cà phê", "coffee"],
+    description: "Cà phê, rang hoặc chưa rang",
+  },
+  {
+    hsCode: "1704",
+    keywords: ["kẹo", "sô cô la", "kẹo ngọt", "chocolate"],
+    description: "Các loại bánh kẹo, sô cô la",
+  },
+  {
+    hsCode: "3926",
+    keywords: ["nhựa", "plastic", "polymer", "chất dẻo"],
+    description: "Sản phẩm bằng chất dẻo",
+  },
+  {
+    hsCode: "4412",
+    keywords: ["gỗ", "ván ép", "plywood", "gỗ ghép"],
+    description: "Gỗ dán, gỗ ghép",
+  },
+  {
+    hsCode: "8207",
+    keywords: ["dụng cụ", "dao", "mũi khoan", "tool"],
+    description: "Dụng cụ cắt gọt bằng kim loại",
+  },
+  {
+    hsCode: "3004",
+    keywords: ["thuốc", "dược phẩm", "medicine"],
+    description: "Dược phẩm đã pha chế",
+  },
+  {
+    hsCode: "3402",
+    keywords: ["chất tẩy", "xà phòng", "detergent"],
+    description: "Sản phẩm giặt tẩy, làm sạch",
+  },
+  {
+    hsCode: "9503",
+    keywords: ["đồ chơi", "toy", "trẻ em"],
+    description: "Đồ chơi và sản phẩm cho trẻ em",
+  },
+  {
+    hsCode: "9403",
+    keywords: ["nội thất", "bàn", "ghế", "tủ"],
+    description: "Đồ nội thất các loại",
+  },
+];
+
+function normalizeText(value: string): string {
+  return value.normalize("NFC").toLowerCase();
+}
+
+function computeSuggestionConfidence(productName: string, keywords: string[]): number {
+  const normalized = normalizeText(productName);
+  const hits = keywords.filter((keyword) => normalized.includes(normalizeText(keyword)));
+  if (hits.length === 0) {
+    return 0;
+  }
+
+  const keywordScore = hits.length / keywords.length;
+  const lengthPenalty = Math.min(1, normalized.split(/\s+/).length / 12);
+  const confidence = Math.min(1, 0.45 + keywordScore * 0.45 + lengthPenalty * 0.1);
+  return Number(confidence.toFixed(2));
+}
+
 export function generateDefaultHsSuggestions(
   productName: string
 ): { hsCode: string; confidence: number; description: string }[] {
-  const lowerName = productName.toLowerCase();
-  const suggestions: { hsCode: string; confidence: number; description: string }[] = [];
+  const scored = HS_SUGGESTION_LIBRARY.map((entry) => ({
+    hsCode: entry.hsCode,
+    confidence: computeSuggestionConfidence(productName, entry.keywords),
+    description: entry.description,
+  }))
+    .filter((item) => item.confidence > 0)
+    .sort((a, b) => b.confidence - a.confidence);
 
-  // Các pattern phổ biến
-  const patterns = [
-    { keywords: ["điện tử", "electronics", "device"], hsCodes: ["8471", "8517", "8528"] },
-    { keywords: ["quần áo", "clothing", "apparel"], hsCodes: ["6204", "6205", "6206"] },
-    { keywords: ["thực phẩm", "food", "beverage"], hsCodes: ["0201", "0202", "0207"] },
-    { keywords: ["hóa chất", "chemical", "chemical"], hsCodes: ["2801", "2802", "2803"] },
-    { keywords: ["kim loại", "metal", "steel"], hsCodes: ["7208", "7209", "7210"] },
-    { keywords: ["nhựa", "plastic"], hsCodes: ["3901", "3902", "3903"] },
-    { keywords: ["gỗ", "wood"], hsCodes: ["4401", "4402", "4403"] },
-    { keywords: ["giấy", "paper"], hsCodes: ["4801", "4802", "4803"] },
-  ];
-
-  for (const pattern of patterns) {
-    for (const keyword of pattern.keywords) {
-      if (lowerName.includes(keyword)) {
-        for (const hsCode of pattern.hsCodes) {
-          suggestions.push({
-            hsCode,
-            confidence: 0.6 + Math.random() * 0.3, // 0.6-0.9
-            description: `Suggested based on keyword: ${keyword}`,
-          });
-        }
-        break;
-      }
-    }
-    if (suggestions.length > 0) break;
+  if (scored.length === 0) {
+    return [
+      { hsCode: "9999", confidence: 0.25, description: "Không xác định rõ - cần kiểm tra thêm" },
+      { hsCode: "8999", confidence: 0.2, description: "Danh mục khác - cần bổ sung thông tin" },
+    ];
   }
 
-  // Nếu không tìm thấy pattern, trả về các HS code phổ biến
-  if (suggestions.length === 0) {
-    suggestions.push(
-      { hsCode: "9999", confidence: 0.3, description: "General category" },
-      { hsCode: "8999", confidence: 0.2, description: "Miscellaneous" }
-    );
-  }
-
-  return suggestions.slice(0, 3);
+  return scored.slice(0, 3);
 }
 
 /**
@@ -275,7 +361,7 @@ export async function analyzeExtractedData(
 ): Promise<any> {
   const analysis = {
     productNames: extractedData.productNames || [],
-    hsCodes: extractedData.hsCodes || [],
+    hsCodes: Array.from(new Set<string>([...(extractedData.hsCodes || [])])),
     suggestions: [] as any[],
     confidence: 0,
   };
@@ -287,15 +373,25 @@ export async function analyzeExtractedData(
       productName,
       suggestions,
     });
+
+    for (const suggestion of suggestions) {
+      analysis.hsCodes.push(suggestion.hsCode);
+    }
   }
+
+  analysis.hsCodes = Array.from(new Set(analysis.hsCodes));
 
   // Tính toán độ tin cậy trung bình
   if (analysis.suggestions.length > 0) {
-    const avgConfidence = analysis.suggestions.reduce((sum: number, item: any) => {
-      const itemConfidence = item.suggestions.length > 0 ? item.suggestions[0].confidence : 0;
-      return sum + itemConfidence;
-    }, 0) / analysis.suggestions.length;
-    analysis.confidence = Math.round(avgConfidence * 100);
+    const avgConfidence =
+      analysis.suggestions.reduce((sum: number, item: any) => {
+        if (!item.suggestions || item.suggestions.length === 0) return sum;
+        const bestSuggestion = item.suggestions[0];
+        return sum + bestSuggestion.confidence;
+      }, 0) / analysis.suggestions.length;
+    analysis.confidence = Math.round(Math.min(1, avgConfidence) * 100);
+  } else if (analysis.hsCodes.length > 0) {
+    analysis.confidence = 80;
   }
 
   return analysis;

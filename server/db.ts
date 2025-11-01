@@ -1,6 +1,6 @@
-import { eq, and, desc, count, gte, lte, or, like, sql, sum } from "drizzle-orm";
+import { eq, and, desc, count, gte, lte, or, like, sql, sum, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, userFeedback, documents, InsertDocument, scrapeLogs, InsertScrapeLog, scrapeSchedules, InsertScrapeSchedule, exportSelections, extractedData, hsCodes, documentHsCodes, referenceData, uploadedFiles, ocrRepository, InsertOcrRepository, ocrStatistics, InsertOcrStatistics } from "../drizzle/schema";
+import { InsertUser, users, userFeedback, documents, InsertDocument, scrapeLogs, InsertScrapeLog, scrapeSchedules, InsertScrapeSchedule, exportSelections, extractedData, hsCodes, documentHsCodes, referenceData, uploadedFiles, uploadedFileAnalyses, ocrRepository, InsertOcrRepository, ocrStatistics, InsertOcrStatistics } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -931,8 +931,54 @@ export async function getUserUploadedFilesWithTotal(
         .where(eq(uploadedFiles.userId, userId)),
     ]);
 
+    const fileIds = files.map((file) => file.id).filter((id): id is number => typeof id === "number");
+    let analysesByFileId = new Map<number, { analysisJson: string | null; extractedDataJson: string | null }>();
+
+    if (fileIds.length > 0) {
+      const analyses = await db
+        .select({
+          uploadedFileId: uploadedFileAnalyses.uploadedFileId,
+          analysisJson: uploadedFileAnalyses.analysisJson,
+          extractedDataJson: uploadedFileAnalyses.extractedDataJson,
+        })
+        .from(uploadedFileAnalyses)
+        .where(inArray(uploadedFileAnalyses.uploadedFileId, fileIds));
+
+      analysesByFileId = new Map(
+        analyses.map((item) => [item.uploadedFileId, { analysisJson: item.analysisJson, extractedDataJson: item.extractedDataJson }]),
+      );
+    }
+
+    const enrichedFiles = files.map((file) => {
+      const analysis = analysesByFileId.get(file.id ?? 0);
+      let parsedAnalysis: any = null;
+      let parsedExtracted: any = null;
+
+      if (analysis?.analysisJson) {
+        try {
+          parsedAnalysis = JSON.parse(analysis.analysisJson);
+        } catch (error) {
+          console.warn("[Database] Failed to parse uploaded file analysis JSON", error);
+        }
+      }
+
+      if (analysis?.extractedDataJson) {
+        try {
+          parsedExtracted = JSON.parse(analysis.extractedDataJson);
+        } catch (error) {
+          console.warn("[Database] Failed to parse uploaded file extracted data JSON", error);
+        }
+      }
+
+      return {
+        ...file,
+        aiAnalysis: parsedAnalysis,
+        extractedData: parsedExtracted,
+      };
+    });
+
     const total = Number(totalResult[0]?.count ?? 0);
-    return { files, total };
+    return { files: enrichedFiles, total };
   } catch (error) {
     console.error("[Database] Failed to get user uploaded files:", error);
     return { files: [], total: 0 };
@@ -946,6 +992,45 @@ export async function getUserUploadedFiles(
 ) {
   const result = await getUserUploadedFilesWithTotal(userId, limit, offset);
   return result.files;
+}
+
+/**
+ * Lưu hoặc cập nhật kết quả phân tích AI cho file tải lên
+ */
+export async function saveUploadedFileAnalysis(
+  uploadedFileId: number,
+  analysis: unknown,
+  extractedDataPayload?: unknown,
+) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot save uploaded file analysis: database not available");
+    return null;
+  }
+
+  try {
+    const payload = {
+      uploadedFileId,
+      analysisJson: analysis ? JSON.stringify(analysis) : null,
+      extractedDataJson: extractedDataPayload ? JSON.stringify(extractedDataPayload) : null,
+    };
+
+    await db
+      .insert(uploadedFileAnalyses)
+      .values(payload)
+      .onDuplicateKeyUpdate({
+        set: {
+          analysisJson: payload.analysisJson,
+          extractedDataJson: payload.extractedDataJson,
+          updatedAt: new Date(),
+        },
+      });
+
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to save uploaded file analysis:", error);
+    return null;
+  }
 }
 
 
