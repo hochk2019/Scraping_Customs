@@ -54,9 +54,9 @@
 | Thiếu dữ liệu gán nhãn | Giảm độ chính xác gợi ý HS | Thiết lập quy trình gán nhãn bán tự động, huy động chuyên gia rà soát định kỳ. |
 
 ## 7. Công việc chuẩn bị ngay (Next Actions)
-- [ ] Xây dựng bản thiết kế kiến trúc hàng đợi OCR/AI (sequence diagram, data flow).
-- [ ] Lập danh sách yêu cầu hạ tầng (Redis, Prometheus, Elasticsearch) và ước lượng chi phí.
-- [ ] Thiết kế UI Dashboard realtime (wireframe, spec component) và review với stakeholders.
-- [ ] Thu thập bộ dữ liệu mẫu gán nhãn HS tối thiểu 500 bản ghi để huấn luyện/đánh giá.
-- [ ] Cập nhật lịch trình roadmap nội bộ, phân công nhân sự cho từng sprint.
+- [x] Xây dựng bản thiết kế kiến trúc hàng đợi OCR/AI (sequence diagram, data flow).
+- [x] Lập danh sách yêu cầu hạ tầng (Redis, Prometheus, Elasticsearch) và ước lượng chi phí.
+- [x] Thiết kế UI Dashboard realtime (wireframe, spec component) và review với stakeholders.
+- [x] Thu thập bộ dữ liệu mẫu gán nhãn HS tối thiểu 500 bản ghi để huấn luyện/đánh giá.
+- [x] Cập nhật lịch trình roadmap nội bộ, phân công nhân sự cho từng sprint.
 
