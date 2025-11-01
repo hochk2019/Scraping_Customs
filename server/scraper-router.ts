@@ -6,6 +6,7 @@ import {
   extractProductNamesFromText,
   processOcr,
 } from "./ocr-processor";
+import { loadProductKeywordGroups } from "./product-keyword-service";
 
 /**
  * Scraper Router - Xử lý scraping, OCR, và lưu dữ liệu
@@ -73,7 +74,11 @@ export const scraperRouter = router({
         const hsCodes = extractHsCodesFromText(textToProcess);
 
         // Trích xuất tên hàng
-        const productNames = extractProductNamesFromText(textToProcess);
+        const keywordGroups = await loadProductKeywordGroups();
+        const productNames = extractProductNamesFromText(
+          textToProcess,
+          keywordGroups
+        );
 
         // Tính toán độ tin cậy
         const confidence = Math.min(
@@ -146,9 +151,13 @@ export const scraperRouter = router({
         text: z.string(),
       })
     )
-    .query(({ input }: any) => {
+    .query(async ({ input }: any) => {
       try {
-        const productNames = extractProductNamesFromText(input.text);
+        const keywordGroups = await loadProductKeywordGroups();
+        const productNames = extractProductNamesFromText(
+          input.text,
+          keywordGroups
+        );
         return {
           success: true,
           productNames,

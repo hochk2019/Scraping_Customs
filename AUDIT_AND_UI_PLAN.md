@@ -7,24 +7,24 @@
 
 ### 1.2 Trình thu thập nâng cao dùng Puppeteer (server/advanced-scraper.ts)
 - Bộ thu thập nâng cao điều khiển trình duyệt không đầu, điền khoảng thời gian, chờ bảng kết quả và mở từng trang chi tiết trong tab mới để đọc bảng dữ liệu và liên kết PDF.【F:server/advanced-scraper.ts†L120-L321】
-- Tuy nhiên, sau khi xử lý xong một trang, mã nguồn chỉ tìm thẻ liên kết có ký tự `>>` rồi bấm trực tiếp. Khi site sử dụng nút phân trang dạng script hoặc khi vẫn còn ở trang chi tiết (do `page.evaluate` diễn ra trước khi quay lại danh sách), thao tác có thể thất bại, dẫn đến dừng ở trang đầu tiên.【F:server/advanced-scraper.ts†L198-L245】
-- Hàm `fillDateRange` giả định input có `type="date"` và ghi thêm ký tự `-`, dễ xung đột với giá trị mặc định hoặc định dạng khác của trang nguồn.【F:server/advanced-scraper.ts†L264-L278】
-- Dữ liệu trả về từ trang chi tiết chưa chuẩn hóa URL tuyệt đối cho PDF, dễ gây lỗi tải khi liên kết tương đối.【F:server/advanced-scraper.ts†L298-L320】
+- Vòng lặp phân trang hiện lấy `href` của nút `>>`, xây lại URL tuyệt đối và `page.goto` trang tiếp theo nên không còn phụ thuộc vào thao tác click rủi ro.【F:server/advanced-scraper.ts†L192-L213】
+- Hàm `fillDateRange` đặt giá trị trực tiếp cho cả input `type=date` và `type=text`, tự chuẩn hóa định dạng `dd/mm/yyyy` cũng như fallback khi không tìm thấy selector phù hợp.【F:server/advanced-scraper.ts†L226-L285】
+- Liên kết PDF luôn được chuẩn hóa bằng `new URL` trước khi tải, đảm bảo pipeline OCR nhận đúng đường dẫn tuyệt đối.【F:server/advanced-scraper.ts†L297-L325】
 
 ### 1.3 OCR & phân tích văn bản
-- `ocr-processor` đã sử dụng `extractPdfText` để gọi `pdf-utils`, đảm bảo chuẩn hóa Unicode NFC sau khi trích xuất văn bản, phù hợp với yêu cầu xử lý tiếng Việt.【F:server/ocr-processor.ts†L20-L44】【F:server/pdf-utils.ts†L1-L33】
-- Từ khóa trích xuất tên hàng vẫn ở dạng danh sách cứng và lặp lại nhiều từ, thiếu nhóm ngữ nghĩa; điều này ảnh hưởng độ chính xác và hiệu quả tìm kiếm.【F:server/ocr-processor.ts†L46-L126】
+- `ocr-processor` sử dụng `extractPdfText` để gọi `pdf-utils`, đảm bảo chuẩn hóa Unicode NFC sau khi trích xuất văn bản, phù hợp với yêu cầu xử lý tiếng Việt.【F:server/ocr-processor.ts†L20-L44】【F:server/pdf-utils.ts†L1-L33】
+- Bộ từ khóa tên hàng được tách theo nhóm ngành, chuẩn hóa Unicode và có thể nạp động từ bảng `referenceData`, đồng thời cache lại cho các lần xử lý tiếp theo.【F:server/product-keyword-service.ts†L1-L111】【F:server/ocr-processor.ts†L46-L118】
 
 ### 1.4 Giao diện hiện có (client/src/pages/Home.tsx)
-- Trang chủ chứa nhiều phân đoạn (hero, tìm kiếm, sidebar, biểu mẫu scraper, danh sách tính năng, hướng dẫn sử dụng, CTA) nên dài và nhiều thông tin, khiến người dùng mới khó tập trung vào hành động chính là tra cứu và xem tài liệu mới.【F:client/src/pages/Home.tsx†L14-L200】
-- Thành phần `RecentDocumentsSidebar` hiển thị ngay trên trang chủ, nhưng các hành động quản trị (tải lên, quản lý lịch) bị ẩn dưới các tuyến đường khác, thiếu menu điều hướng rõ ràng.【F:client/src/pages/Home.tsx†L24-L72】
+- Trang chủ được tái cấu trúc thành layout hai cột: hero súc tích, cột trái tập trung vào công văn mới và biểu mẫu scraper, cột phải gom tra cứu, trạng thái scraper và tác vụ nhanh.【F:client/src/pages/Home.tsx†L79-L168】
+- `RecentDocumentsSidebar` hỗ trợ chế độ bảng (`variant="panel"`) để dùng như vùng nội dung chính, cho phép mở rộng số lượng công văn hiển thị.【F:client/src/components/RecentDocumentsSidebar.tsx†L9-L73】
 
 ## 2. Rủi ro logic & đề xuất khắc phục
-1. **Phân trang Puppeteer không ổn định** – Cần tách rõ quy trình: sau khi mở trang chi tiết thì đóng tab và quay lại danh sách trước khi dò nút `>>`, đồng thời tìm nút bằng selector cụ thể hoặc query tham số `page` trong URL để chắc chắn chuyển trang.【F:server/advanced-scraper.ts†L198-L245】
-2. **Điền ngày sai định dạng** – Bổ sung logic phát hiện `input[type='text']` hoặc sử dụng `page.evaluate` để đặt trực tiếp thuộc tính `value`, kèm chuẩn hóa ngày theo định dạng gốc của trang.【F:server/advanced-scraper.ts†L264-L278】
-3. **URL PDF tương đối** – Khi đọc trang chi tiết nên dựng URL tuyệt đối bằng `new URL(href, CUSTOMS_BASE_URL)`, sau đó truyền vào pipeline tải PDF để tránh lỗi 404.【F:server/advanced-scraper.ts†L298-L320】
-4. **Danh sách từ khóa sản phẩm khó bảo trì** – Tách thành cấu trúc theo nhóm ngành hàng, chuẩn hóa Unicode và bổ sung khả năng cấu hình từ cơ sở dữ liệu để linh hoạt hơn.【F:server/ocr-processor.ts†L46-L126】
-5. **Trải nghiệm trang chủ bị phân tán** – Cần tái cấu trúc layout để ưu tiên hai hành động chính: tra cứu và xem công văn mới, các phân khúc khác chuyển sang trang phụ hoặc accordion để người dùng không bị quá tải.【F:client/src/pages/Home.tsx†L14-L200】
+- [x] **Phân trang Puppeteer không ổn định** – Đã thay việc click nút `>>` bằng cách dựng URL tuyệt đối và `page.goto`, đảm bảo luôn trở về trang danh sách trước khi chuyển trang.【F:server/advanced-scraper.ts†L192-L213】
+- [x] **Điền ngày sai định dạng** – Hàm `fillDateRange` mới đặt giá trị trực tiếp cho cả input ngày và text, chuẩn hóa chuỗi `dd/mm/yyyy` và fallback gõ thủ công khi cần.【F:server/advanced-scraper.ts†L226-L285】
+- [x] **URL PDF tương đối** – Liên kết PDF được chuẩn hóa bằng `new URL` và truyền xuyên suốt sang bước tải/OCR nên không còn lỗi 404 do đường dẫn tương đối.【F:server/advanced-scraper.ts†L297-L325】
+- [x] **Danh sách từ khóa sản phẩm khó bảo trì** – Đã tách thành nhóm ngành, chuẩn hóa Unicode, hỗ trợ đọc cấu hình từ bảng `referenceData` và cache để tái sử dụng trong OCR.【F:server/product-keyword-service.ts†L1-L111】【F:server/ocr-processor.ts†L17-L118】
+- [x] **Trải nghiệm trang chủ bị phân tán** – Trang chủ được tinh gọn thành hero + hai cột với tác vụ nhanh, trạng thái scraper và khối tra cứu HS code, giúp nổi bật hành động chính.【F:client/src/pages/Home.tsx†L79-L168】【F:client/src/components/RecentDocumentsSidebar.tsx†L9-L73】
 
 ## 3. Kế hoạch tái xây dựng giao diện thân thiện
 ### Giai đoạn A – Xác định trải nghiệm cốt lõi

@@ -76,18 +76,27 @@ const detailData: Record<string, any> = {
 function createListPage() {
   let currentIndex = 0;
   let currentUrl = mockListPages[currentIndex].url;
-  let nextRequested = false;
   const mockDateInputs = [{ type: vi.fn() }, { type: vi.fn() }];
 
   return {
     setViewport: vi.fn(async () => {}),
     goto: vi.fn(async (url: string) => {
+      const matchedIndex = mockListPages.findIndex(
+        (page) => page.url === url
+      );
+      if (matchedIndex !== -1) {
+        currentIndex = matchedIndex;
+        currentUrl = mockListPages[currentIndex].url;
+        return;
+      }
+
       if (url.startsWith(CUSTOMS_LIST_URL)) {
         currentIndex = 0;
         currentUrl = mockListPages[currentIndex].url;
-      } else {
-        currentUrl = url;
+        return;
       }
+
+      currentUrl = url;
     }),
     evaluate: vi.fn(async (fn: () => unknown) => {
       const source = fn.toString();
@@ -100,11 +109,15 @@ function createListPage() {
         return mockListPages[currentIndex].hasNext;
       }
 
-      if (source.includes("nextLink.click")) {
-        if (mockListPages[currentIndex].hasNext) {
-          nextRequested = true;
+      if (source.includes("nextAnchor?.getAttribute")) {
+        const nextIndex = Math.min(
+          currentIndex + 1,
+          mockListPages.length - 1
+        );
+        if (!mockListPages[currentIndex].hasNext) {
+          return null;
         }
-        return undefined;
+        return mockListPages[nextIndex].url;
       }
 
       if (source.includes('querySelectorAll("table tbody tr").length > 0')) {
@@ -113,13 +126,7 @@ function createListPage() {
 
       return undefined;
     }),
-    waitForNavigation: vi.fn(async () => {
-      if (nextRequested && currentIndex < mockListPages.length - 1) {
-        currentIndex += 1;
-        currentUrl = mockListPages[currentIndex].url;
-      }
-      nextRequested = false;
-    }),
+    waitForNavigation: vi.fn(async () => {}),
     waitForSelector: vi.fn(async (selector: string, options?: any) => {
       if (selector === "table tbody") {
         return;

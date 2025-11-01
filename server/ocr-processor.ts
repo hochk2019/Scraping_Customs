@@ -1,5 +1,12 @@
 import axios from "axios";
 import { extractPdfText } from "./pdf-utils";
+import {
+  DEFAULT_PRODUCT_KEYWORD_GROUPS,
+  ProductKeywordGroup,
+  buildKeywordDictionary,
+  loadProductKeywordGroups,
+  normalizeKeyword,
+} from "./product-keyword-service";
 // PDF parsing sẽ được xử lý thông qua server endpoint
 
 /**
@@ -91,152 +98,46 @@ export function extractHsCodesFromText(text: string): string[] {
  * Trích xuất tên hàng từ văn bản
  * Tìm các từ khóa liên quan đến hàng hóa
  */
-export function extractProductNamesFromText(text: string): string[] {
-  const productNames: string[] = [];
+export function extractProductNamesFromText(
+  text: string,
+  keywordGroups: ProductKeywordGroup[] = DEFAULT_PRODUCT_KEYWORD_GROUPS
+): string[] {
+  const normalizedText = text.normalize("NFC").toLowerCase();
+  const dictionary = buildKeywordDictionary(keywordGroups);
+  const canonicalMap = new Map<string, string>();
 
-  // Danh sách từ khóa hàng hóa phổ biến
-  const keywords = [
-    "áo",
-    "quần",
-    "giày",
-    "dép",
-    "mũ",
-    "túi",
-    "vali",
-    "điện thoại",
-    "máy tính",
-    "laptop",
-    "máy ảnh",
-    "tivi",
-    "tủ lạnh",
-    "máy giặt",
-    "nồi",
-    "chảo",
-    "dao",
-    "muỗng",
-    "bàn",
-    "ghế",
-    "giường",
-    "tủ",
-    "kệ",
-    "đèn",
-    "quạt",
-    "máy lạnh",
-    "lò vi sóng",
-    "bếp",
-    "lò nướng",
-    "ấm",
-    "bình",
-    "ly",
-    "cốc",
-    "đĩa",
-    "tô",
-    "chén",
-    "xoong",
-    "nước",
-    "rượu",
-    "bia",
-    "nước ngọt",
-    "cà phê",
-    "trà",
-    "bánh",
-    "kẹo",
-    "chocolate",
-    "sữa",
-    "phô mai",
-    "bơ",
-    "dầu",
-    "muối",
-    "đường",
-    "gia vị",
-    "hạt",
-    "hạt cà phê",
-    "cacao",
-    "bột",
-    "gạo",
-    "lúa mì",
-    "ngô",
-    "đậu",
-    "khoai",
-    "rau",
-    "quả",
-    "trái cây",
-    "hoa",
-    "cây",
-    "gỗ",
-    "giấy",
-    "bìa",
-    "vải",
-    "sợi",
-    "dây",
-    "sơn",
-    "keo",
-    "chất dẻo",
-    "kim loại",
-    "sắt",
-    "thép",
-    "nhôm",
-    "đồng",
-    "kẽm",
-    "chì",
-    "thiếc",
-    "vàng",
-    "bạc",
-    "đá",
-    "cát",
-    "xi măng",
-    "gạch",
-    "kính",
-    "gốm",
-    "sứ",
-    "sơn",
-    "dầu",
-    "xăng",
-    "dầu diesel",
-    "gas",
-    "than",
-    "coke",
-    "phân bón",
-    "thuốc",
-    "hóa chất",
-    "chất tẩy",
-    "xà phòng",
-    "mỹ phẩm",
-    "nước hoa",
-    "kem",
-    "dầu gội",
-    "bàn chải",
-    "bông",
-    "khăn",
-    "giấy vệ sinh",
-    "bỉm",
-    "bộ đồ",
-    "áo khoác",
-    "quần short",
-    "váy",
-    "đầm",
-    "áo sơ mi",
-    "áo phông",
-    "áo len",
-    "áo khoác",
-    "áo vest",
-    "quần jeans",
-    "quần khaki",
-    "quần linen",
-    "quần tây",
-  ];
-
-  // Tìm các từ khóa trong văn bản
-  for (const keyword of keywords) {
-    const regex = new RegExp(`\\b${keyword}\\w*\\b`, "gi");
-    const matches = text.match(regex);
-    if (matches) {
-      productNames.push(...matches);
+  for (const group of keywordGroups) {
+    for (const keyword of group.keywords) {
+      const normalized = normalizeKeyword(keyword);
+      if (!canonicalMap.has(normalized)) {
+        canonicalMap.set(normalized, keyword.normalize("NFC"));
+      }
     }
   }
 
-  // Loại bỏ trùng lặp và chuyển thành chữ thường
-  return Array.from(new Set(productNames.map((name) => name.toLowerCase())));
+  const results = new Set<string>();
+
+  for (const normalizedKeyword of dictionary) {
+    const escapedKeyword = escapeKeywordForPattern(normalizedKeyword);
+    const regex = new RegExp(
+      `(?<![\\p{L}\\p{N}])${escapedKeyword}(?![\\p{L}\\p{N}])`,
+      "gu"
+    );
+
+    if (regex.test(normalizedText)) {
+      const canonical = canonicalMap.get(normalizedKeyword);
+      if (canonical) {
+        results.add(canonical);
+      }
+    }
+  }
+
+  return Array.from(results);
+}
+
+function escapeKeywordForPattern(keyword: string): string {
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return escaped.replace(/\s+/g, "\\s+");
 }
 
 /**
@@ -265,7 +166,11 @@ export async function processOcr(
     const extractedHsCodes = extractHsCodesFromText(rawText);
 
     // Bước 4: Trích xuất tên hàng
-    const extractedProductNames = extractProductNamesFromText(rawText);
+    const keywordGroups = await loadProductKeywordGroups();
+    const extractedProductNames = extractProductNamesFromText(
+      rawText,
+      keywordGroups
+    );
 
     // Bước 5: Tính toán độ tin cậy
     const totalIndicators =

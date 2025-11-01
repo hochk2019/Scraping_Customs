@@ -3,10 +3,21 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { FileText, Calendar, Building2, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
-export default function RecentDocumentsSidebar() {
+interface RecentDocumentsSidebarProps {
+  variant?: "sidebar" | "panel";
+  className?: string;
+  limit?: number;
+}
+
+export default function RecentDocumentsSidebar({
+  variant = "sidebar",
+  className,
+  limit = 5,
+}: RecentDocumentsSidebarProps = {}) {
   // Fetch recent documents
-  const { data: documentsData } = trpc.documents.list.useQuery({ limit: 5 });
+  const { data: documentsData } = trpc.documents.list.useQuery({ limit });
   const documents = documentsData?.documents || [];
 
   const getStatusBadge = (status: string) => {
@@ -27,8 +38,19 @@ export default function RecentDocumentsSidebar() {
   };
 
   return (
-    <div className="w-full lg:w-80">
-      <Card className="sticky top-20">
+    <div
+      className={cn(
+        "w-full",
+        variant === "sidebar" ? "lg:w-80" : "",
+        className
+      )}
+    >
+      <Card
+        className={cn(
+          "h-full",
+          variant === "sidebar" ? "sticky top-20" : "border shadow-sm"
+        )}
+      >
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-blue-600" />
