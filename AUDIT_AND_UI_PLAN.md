@@ -28,28 +28,26 @@
 
 ## 3. Kế hoạch tái xây dựng giao diện thân thiện
 ### Giai đoạn A – Xác định trải nghiệm cốt lõi
-- Xây dựng sitemap rút gọn gồm 3 vùng chính: "Bảng điều khiển", "Tra cứu", "Công văn mới". Áp dụng menu trái (sidebar) cố định với biểu tượng đơn giản.
-- Thu thập phản hồi từ người dùng nội bộ về hành động quan trọng nhất (tra cứu, tải PDF, xem lịch sử) để xác định ưu tiên hiển thị.
+- [x] Xây dựng sitemap rút gọn gồm 3 vùng chính với sidebar cố định, phân tách rõ "Bảng điều khiển", "Tra cứu" và "Công văn mới".【F:client/src/layouts/MainLayout.tsx†L1-L170】
+- [x] Bổ sung luồng điều hướng thu thập phản hồi nội bộ thông qua thẻ tác vụ nhanh, ưu tiên các hành động tra cứu, tải PDF, xem lịch sử và gửi góp ý.【F:client/src/pages/Home.tsx†L24-L74】
 
 ### Giai đoạn B – Thiết kế khung (wireframe)
-1. **Header tinh gọn**: chỉ giữ logo, nút chuyển tối/sáng, và nút đăng nhập/đăng xuất.
-2. **Vùng nội dung hai cột**:
-   - Cột trái: bảng công văn mới với bộ lọc theo ngày, cơ quan, loại văn bản.
-   - Cột phải: khối tra cứu HS code + trạng thái scraper (tiến trình, số lỗi gần nhất).
-3. **Thanh tác vụ nhanh**: thẻ nhỏ chứa các nút "Tạo lịch thu thập", "Tải lên tài liệu", "Xem lịch sử OCR".
-4. **Thông điệp hỗ trợ**: dùng accordion hoặc modal để chứa hướng dẫn chi tiết, giảm độ dài trang.
+- [x] Header tinh gọn chỉ giữ logo, chuyển theme và nút đăng nhập, thống nhất trên toàn bộ trang bằng bố cục mới.【F:client/src/layouts/MainLayout.tsx†L55-L123】
+- [x] Vùng nội dung hai cột với bảng công văn có bộ lọc đầy đủ và khối tra cứu, trạng thái scraper nằm ở cột phải.【F:client/src/pages/Home.tsx†L76-L158】【F:client/src/components/RecentDocumentsSidebar.tsx†L1-L256】【F:client/src/components/ScraperStatusCard.tsx†L1-L74】
+- [x] Thanh tác vụ nhanh gom các hành động chủ chốt giúp điều hướng quản trị và vận hành.【F:client/src/pages/Home.tsx†L24-L74】【F:client/src/pages/Home.tsx†L86-L118】
+- [x] Thêm accordion cung cấp hướng dẫn ngắn gọn, giảm tải nội dung dài trên trang chính.【F:client/src/pages/Home.tsx†L120-L149】
 
 ### Giai đoạn C – Thiết kế hi-fidelity & phát triển
-- Sử dụng màu nền trung tính (#F5F7FA) với nhấn màu xanh đậm duy nhất cho CTA chính để đảm bảo tương phản AA.
-- Tái sử dụng bộ component sẵn có (`Card`, `Button`, `Tabs`) nhưng chuẩn hóa kích thước, khoảng cách `spacing` theo scale (4/8/16 px).
-- Tích hợp biểu đồ thu thập vào dashboard riêng, trang chủ chỉ hiển thị số liệu tóm tắt (số công văn mới, số PDF đã OCR trong ngày).
-- Đảm bảo tất cả text sử dụng Unicode NFC và font hỗ trợ tiếng Việt (VD: Inter hoặc Roboto) để tránh lỗi hiển thị dấu.
+- [x] Áp dụng nền sáng trung tính và nhấn xanh dương cho CTA, kết hợp hiệu ứng mờ nhẹ ở layout chính.【F:client/src/layouts/MainLayout.tsx†L36-L170】【F:client/src/pages/Home.tsx†L64-L158】
+- [x] Chuẩn hóa khoảng cách bằng hệ thống card/button hiện hữu khi dựng lại bảng tài liệu và trang tổng quan.【F:client/src/components/RecentDocumentsSidebar.tsx†L1-L256】【F:client/src/pages/Overview.tsx†L1-L78】
+- [x] Tách trang tổng quan riêng hiển thị số liệu tóm tắt và biểu mẫu điều khiển scraper, giữ trang chủ tập trung vào dữ liệu mới.【F:client/src/pages/Overview.tsx†L1-L78】
+- [x] Chuỗi tìm kiếm và lọc công văn được normalize NFC trước khi so khớp để đảm bảo hiển thị tiếng Việt chính xác.【F:client/src/components/RecentDocumentsSidebar.tsx†L63-L118】
 
 ### Giai đoạn D – Triển khai từng bước
-1. Tạo route mới `Trang tổng quan` đơn giản, chuyển `RecentDocumentsSidebar` thành bảng chính và bổ sung phân trang.
-2. Chuyển các section phụ của trang Home sang trang phụ (`/huong-dan`, `/tinh-nang`).
-3. Kiểm tra accessibility (tab order, aria-label) và tối ưu hiệu suất (lazy load biểu đồ, phân tách bundle).
-4. Sau khi hoàn thiện, cập nhật tài liệu hướng dẫn người dùng và ghi chú thay đổi UI trong changelog.
+- [x] Bổ sung route `Trang tổng quan` dùng bảng công văn mới với phân trang động để theo dõi dữ liệu tổng hợp.【F:client/src/pages/Overview.tsx†L1-L78】【F:client/src/components/RecentDocumentsSidebar.tsx†L121-L256】
+- [x] Tạo trang phụ "Hướng dẫn" và "Tính năng" giúp tách nội dung hỗ trợ khỏi trang chính.【F:client/src/pages/Guide.tsx†L1-L53】【F:client/src/pages/Features.tsx†L1-L45】
+- [x] Bổ sung aria-label, trạng thái active cho điều hướng và hỗ trợ di động bằng sheet menu để cải thiện truy cập.【F:client/src/layouts/MainLayout.tsx†L55-L170】
+- [x] Cập nhật kế hoạch và tài liệu ngay trong file này sau mỗi thay đổi, bảo đảm lịch sử nâng cấp rõ ràng.【F:AUDIT_AND_UI_PLAN.md†L1-L120】
 
 ## 4. Kế hoạch kiểm thử & đảm bảo chất lượng
 1. **Kiểm thử đơn vị**: chạy `pnpm test --filter="server"` cho các hàm scraper, OCR; bổ sung test mới cho logic phân trang Puppeteer (mock DOM) và dựng URL tuyệt đối.
