@@ -2,6 +2,24 @@ import { describe, expect, it, vi, afterEach, beforeEach } from "vitest";
 
 const SAMPLE_TEXT = "Mã HS 6204.62.20 áp dụng cho áo khoác dệt kim xuất khẩu.";
 
+vi.mock("prom-client", () => {
+  class DummyMetric {
+    inc() {}
+    dec() {}
+    observe() {}
+  }
+
+  return {
+    Counter: DummyMetric,
+    Gauge: DummyMetric,
+    Histogram: DummyMetric,
+    Registry: class {
+      registerMetric() {}
+    },
+    collectDefaultMetrics: vi.fn(),
+  };
+});
+
 const addMock = vi.fn(async (_name: string, _payload: unknown, options?: any) => ({
   id: options?.jobId ?? "job-mock",
 }));

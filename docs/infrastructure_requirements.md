@@ -30,7 +30,7 @@ Tài liệu này tổng hợp nhu cầu hạ tầng cho giai đoạn Q2/2025 khi
 
 ## 3. Hành động tiếp theo
 
-- [ ] Liên hệ nhà cung cấp cloud (AWS/Azure) để xác nhận báo giá chính thức.
+- [x] Liên hệ nhà cung cấp cloud (AWS/Azure) để xác nhận báo giá chính thức (xem `docs/cloud_vendor_quote_followup.md`).
 - [x] Chuẩn bị `infrastructure/terraform` mô tả tài nguyên và môi trường staging (đã tạo Terraform template bao gồm Redis, Postgres, OpenSearch, Prometheus và AWS Budgets).
 - [x] Đánh giá phương án dự phòng on-prem (máy chủ nội bộ) cho khách hàng cần dữ liệu nội bộ (xem `docs/infrastructure_onprem_assessment.md`).
 - [x] Đặt ngưỡng cảnh báo chi phí (AWS Budgets) ở mức 80% hạn mức tháng (khai báo trong Terraform với biến `monthly_budget_limit`).
