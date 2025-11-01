@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, uniqueIndex } from "drizzle-orm/mysql-core";
+import { double, int, mysqlEnum, mysqlTable, text, timestamp, varchar, uniqueIndex } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -399,3 +399,92 @@ export const ocrStatistics = mysqlTable("ocrStatistics", {
 
 export type OcrStatistics = typeof ocrStatistics.$inferSelect;
 export type InsertOcrStatistics = typeof ocrStatistics.$inferInsert;
+
+const jobStatusEnum = ["pending", "processing", "completed", "failed"] as const;
+
+export const scrapeJobsQueue = mysqlTable(
+  "scrapeJobs",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    jobId: varchar("jobId", { length: 64 }).notNull().unique(),
+    documentId: int("documentId"),
+    type: mysqlEnum("type", ["scrape", "ocr", "ai"]).notNull(),
+    payload: text("payload"),
+    status: mysqlEnum("status", jobStatusEnum).default("pending"),
+    retryCount: int("retryCount").default(0),
+    errorMessage: text("errorMessage"),
+    startedAt: timestamp("startedAt"),
+    completedAt: timestamp("completedAt"),
+    durationMs: int("durationMs"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    jobIdIdx: uniqueIndex("scrapeJobs_jobId_idx").on(table.jobId),
+  })
+);
+
+export type ScrapeQueueJob = typeof scrapeJobsQueue.$inferSelect;
+export type InsertScrapeQueueJob = typeof scrapeJobsQueue.$inferInsert;
+
+export const ocrJobsQueue = mysqlTable(
+  "ocrJobs",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    jobId: varchar("jobId", { length: 64 }).notNull().unique(),
+    documentId: int("documentId").notNull(),
+    engine: varchar("engine", { length: 100 }).default("builtin"),
+    durationMs: int("durationMs").default(0),
+    confidence: double("confidence").default(0),
+    status: mysqlEnum("status", jobStatusEnum).default("pending"),
+    logs: text("logs"),
+    errorMessage: text("errorMessage"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    jobIdIdx: uniqueIndex("ocrJobs_jobId_idx").on(table.jobId),
+  })
+);
+
+export type OcrQueueJob = typeof ocrJobsQueue.$inferSelect;
+export type InsertOcrQueueJob = typeof ocrJobsQueue.$inferInsert;
+
+export const aiJobsQueue = mysqlTable(
+  "aiJobs",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    jobId: varchar("jobId", { length: 64 }).notNull().unique(),
+    documentId: int("documentId").notNull(),
+    model: varchar("model", { length: 100 }).default("openai"),
+    suggestions: text("suggestions"),
+    confidence: double("confidence").default(0),
+    status: mysqlEnum("status", jobStatusEnum).default("pending"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    jobIdIdx: uniqueIndex("aiJobs_jobId_idx").on(table.jobId),
+  })
+);
+
+export type AiQueueJob = typeof aiJobsQueue.$inferSelect;
+export type InsertAiQueueJob = typeof aiJobsQueue.$inferInsert;
+
+export const documentEmbeddings = mysqlTable(
+  "documentEmbeddings",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    documentId: int("documentId").notNull(),
+    embeddingVector: text("embeddingVector").notNull(),
+    model: varchar("model", { length: 100 }).notNull(),
+    version: varchar("version", { length: 50 }).default("v1"),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    documentIdx: uniqueIndex("documentEmbeddings_document_idx").on(table.documentId),
+  })
+);
+
+export type DocumentEmbedding = typeof documentEmbeddings.$inferSelect;
+export type InsertDocumentEmbedding = typeof documentEmbeddings.$inferInsert;

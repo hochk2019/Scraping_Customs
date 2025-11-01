@@ -1,5 +1,5 @@
 {
-  "version": "7",
+  "version": "8",
   "dialect": "mysql",
   "entries": [
     {
@@ -49,6 +49,13 @@
       "version": "5",
       "when": 1761829492600,
       "tag": "0006_cultured_liz_osborn",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1762011055343,
+      "tag": "0008_queue_job_tracking",
       "breakpoints": true
     }
   ]

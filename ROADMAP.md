@@ -4,6 +4,20 @@
 
 Customs Scraper là nền tảng tự động thu thập, phân tích, và tra cứu dữ liệu hải quan Việt Nam. Tài liệu này mô tả định hướng phát triển từ Version 1 đến Version 5 với các tính năng, công nghệ, và chiến lược phát triển chi tiết.
 
+## 🗓️ Lịch trình nội bộ Q2/2025
+
+| Sprint | Thời gian | Mục tiêu chính | Người phụ trách | Ghi chú |
+| --- | --- | --- | --- | --- |
+| Sprint 1 – Hàng đợi & hiệu năng | 07/04 - 04/05 | Redis caching, BullMQ, Prometheus | **Nguyễn Minh Khôi** (Backend Lead), **Trần Hoài Ân** (DevOps) | Chuẩn bị hạ tầng staging tuần 1 |
+| Sprint 2 – Dashboard realtime | 05/05 - 08/06 | WebSocket/SSE, dashboard, tìm kiếm nâng cao | **Lê Thu Trang** (Frontend Lead), **Phạm Đức Long** (Product) | Test Playwright tuần 5 |
+| Sprint 3 – AI nâng cao | 09/06 - 13/07 | Embedding, gợi ý HS, anomaly detection | **Võ Hải Đăng** (AI Engineer), **Ngô Phương Linh** (Data Analyst) | Review bảo mật tuần 2 |
+| Sprint Retro & Roadmap Update | 14/07 - 20/07 | Đánh giá KPI, cập nhật backlog, chuẩn bị Q3 | **PM: Đỗ Quang Huy** | Thu thập phản hồi người dùng |
+
+**Cam kết nguồn lực:**
+
+- Backend (2 FTE), Frontend (2 FTE), AI/DS (1.5 FTE), QA (1 FTE), DevOps (0.5 FTE).
+- Daily standup 9:30, Demo cuối sprint vào thứ Sáu tuần cuối.
+
 ---
 
 ## 🎯 Version 1 (Hiện Tại) - MVP & Foundation
