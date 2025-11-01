@@ -15,6 +15,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Upload, FileText, AlertCircle, CheckCircle2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
 
 export default function DocumentsUpload() {
   const [formData, setFormData] = useState({
@@ -36,8 +37,9 @@ export default function DocumentsUpload() {
 
   // Fetch documents
   const { data: documentsData, refetch } = trpc.documents.list.useQuery({ limit: 20 });
+  const createDocument = trpc.documents.create.useMutation();
   const documents = documentsData?.documents || [];
-
+  
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
@@ -51,11 +53,24 @@ export default function DocumentsUpload() {
     setIsSubmitting(true);
 
     try {
-      // Call API to create document - using the correct endpoint
-      // Note: You may need to add a create endpoint to your documents router
-      // For now, we'll just reset the form and refetch
-      
-      // Reset form
+      const payload = {
+        documentNumber: formData.documentNumber,
+        title: formData.title,
+        documentType: formData.documentType || undefined,
+        issuingAgency: formData.issuingAgency || undefined,
+        issueDate: formData.issueDate || undefined,
+        signer: formData.signer || undefined,
+        fileUrl: formData.fileUrl || undefined,
+        fileName: formData.fileName || undefined,
+        summary: formData.summary || undefined,
+        detailUrl: formData.detailUrl || undefined,
+        notes: formData.notes || undefined,
+        tags: formData.tags || undefined,
+      };
+
+      await createDocument.mutateAsync(payload);
+      toast.success("Đã lưu tài liệu công văn mới");
+
       setFormData({
         documentNumber: "",
         title: "",
@@ -71,10 +86,10 @@ export default function DocumentsUpload() {
         tags: "",
       });
 
-      // Refetch documents
       await refetch();
     } catch (error) {
       console.error("Error creating document:", error);
+      toast.error("Không thể lưu tài liệu, vui lòng thử lại");
     } finally {
       setIsSubmitting(false);
     }
@@ -105,7 +120,8 @@ export default function DocumentsUpload() {
         <div>
           <h1 className="text-3xl font-bold">Đăng Tài Liệu Công Văn</h1>
           <p className="text-gray-600 mt-2">
-            Cập nhật các công văn mới từ Cục Hải quan và kết quả phân tích phân loại
+            Cập nhật các công văn mới từ Cục Hải quan và kết quả phân tích phân loại. Sau khi lưu,
+            tài liệu sẽ xuất hiện ở trang "Công văn mới" và thanh bên tổng hợp để người dùng tra cứu nhanh.
           </p>
         </div>
 

@@ -61,7 +61,7 @@ export default function Home() {
       description="Theo dõi, lọc và truy cập nhanh các công văn từ Tổng cục Hải quan. Hệ thống đã chuẩn hóa Unicode để hiển thị tiếng Việt chính xác."
       actions={
         <>
-          <Button onClick={() => setLocation("/hs-code-lookup")} className="gap-2">
+          <Button onClick={() => setLocation("/")} className="gap-2">
             <FileText className="h-4 w-4" />
             Tra cứu HS Code
           </Button>

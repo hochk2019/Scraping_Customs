@@ -7,6 +7,22 @@ import {
   processOcr,
 } from "./ocr-processor";
 import { loadProductKeywordGroups } from "./product-keyword-service";
+import {
+  clearExtractedData,
+  createScrapeLog,
+  deleteOcrResultsByDocumentId,
+  getDocumentById,
+  getDocumentsTotal,
+  getLatestScrapeLog,
+  saveExtractedData,
+  saveOcrResult,
+  saveOcrStatistics,
+  updateDocumentOcrResult,
+  updateProcessedStatus,
+  updateScrapeLog,
+  upsertDocument,
+} from "./db";
+import { deriveCustomsDocId } from "./document-utils";
 
 /**
  * Scraper Router - Xử lý scraping, OCR, và lưu dữ liệu
@@ -17,18 +33,68 @@ export const scraperRouter = router({
    * Thu thập dữ liệu từ trang Hải quan
    */
   scrapeCustoms: publicProcedure.mutation(async () => {
+    let logId: number | null = null;
     try {
       console.log("[Scraper Router] Bắt đầu scraping từ trang Hải quan");
 
+      const log = await createScrapeLog({
+        userId: 0,
+        scrapeType: "manual",
+        startTime: new Date(),
+        status: "running",
+      });
+      logId = log?.id ?? null;
+
       const documents = await scrapeCustomsDocuments();
+      const persisted: Array<{ id: number | null; documentNumber: string }> = [];
+      let savedCount = 0;
+
+      for (const doc of documents) {
+        try {
+          const customsDocId = deriveCustomsDocId(doc.detailUrl, doc.documentNumber);
+          const result = await upsertDocument({
+            documentNumber: doc.documentNumber.normalize("NFC"),
+            customsDocId,
+            title: doc.title?.normalize("NFC"),
+            documentType: doc.documentType?.normalize("NFC"),
+            issuingAgency: doc.issuingAgency?.normalize("NFC"),
+            issueDate: doc.issueDate,
+            signer: doc.signer?.normalize("NFC"),
+            fileUrl: doc.fileUrl,
+            fileName: doc.fileName,
+            summary: doc.title?.normalize("NFC"),
+            detailUrl: doc.detailUrl,
+            status: "pending",
+            processedStatus: "new",
+          });
+
+          if (result) {
+            savedCount += 1;
+            persisted.push({ id: result.id, documentNumber: result.documentNumber });
+          }
+        } catch (persistError) {
+          console.error("[Scraper Router] Không thể lưu tài liệu:", persistError);
+        }
+      }
+
+      if (logId) {
+        await updateScrapeLog(logId, {
+          endTime: new Date(),
+          status: "completed",
+          documentsFound: documents.length,
+          documentsDownloaded: savedCount,
+        });
+      }
+
+      const totalDocuments = await getDocumentsTotal();
 
       console.log(
-        `[Scraper Router] Thu thập thành công ${documents.length} tài liệu`
+        `[Scraper Router] Thu thập ${documents.length} tài liệu, lưu thành công ${savedCount}`,
       );
 
       return {
         success: true,
-        message: `Thu thập thành công ${documents.length} tài liệu`,
+        message: `Thu thập thành công ${documents.length} tài liệu, đã lưu ${savedCount}`,
         documents: documents.map((doc) => ({
           documentNumber: doc.documentNumber,
           title: doc.title,
@@ -37,10 +103,24 @@ export const scraperRouter = router({
           issueDate: doc.issueDate,
           fileUrl: doc.fileUrl,
           fileName: doc.fileName,
+          detailUrl: doc.detailUrl,
         })),
+        savedCount,
+        persisted,
+        totalDocuments,
+        logId,
       };
     } catch (error) {
       console.error("[Scraper Router] Lỗi scraping:", error);
+
+      if (logId) {
+        await updateScrapeLog(logId, {
+          endTime: new Date(),
+          status: "failed",
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+      }
+
       return {
         success: false,
         message: "Lỗi khi scraping từ trang Hải quan",
@@ -67,28 +147,106 @@ export const scraperRouter = router({
           `[Scraper Router] Xử lý OCR cho: ${input.fileName}`
         );
 
-        // Nếu có rawText, sử dụng trực tiếp
-        const textToProcess = input.rawText || "";
+        const documentIdNumber = Number.parseInt(input.documentId, 10);
+        if (!Number.isFinite(documentIdNumber)) {
+          throw new Error("documentId không hợp lệ");
+        }
 
-        // Trích xuất HS code
-        const hsCodes = extractHsCodesFromText(textToProcess);
+        const startedAt = Date.now();
+        let textToProcess = input.rawText?.trim() ?? "";
+        let hsCodes: string[] = [];
+        let productNames: string[] = [];
+        let confidence = 0;
+        let rawText = textToProcess;
 
-        // Trích xuất tên hàng
-        const keywordGroups = await loadProductKeywordGroups();
-        const productNames = extractProductNamesFromText(
-          textToProcess,
-          keywordGroups
-        );
+        if (!textToProcess) {
+          const ocrResult = await processOcr(
+            input.documentId,
+            input.fileName,
+            input.fileUrl,
+          );
+          rawText = ocrResult.rawText;
+          textToProcess = rawText.trim();
+          hsCodes = ocrResult.extractedHsCodes;
+          productNames = ocrResult.extractedProductNames;
+          confidence = ocrResult.confidence;
+        } else {
+          const keywordGroups = await loadProductKeywordGroups();
+          rawText = textToProcess;
+          hsCodes = extractHsCodesFromText(textToProcess);
+          productNames = extractProductNamesFromText(textToProcess, keywordGroups);
+          const totalIndicators = hsCodes.length + productNames.length;
+          const wordCount = textToProcess ? textToProcess.split(/\s+/).length : 0;
+          confidence =
+            totalIndicators === 0
+              ? 0
+              : Math.min(1, totalIndicators / Math.max(wordCount, 10));
+        }
 
-        // Tính toán độ tin cậy
-        const confidence = Math.min(
-          1,
-          (hsCodes.length + productNames.length) / 10
-        );
+        const normalizedText = rawText.normalize("NFC");
+        const trimmed = normalizedText.trim();
+        const wordCount = trimmed ? trimmed.split(/\s+/).length : 0;
+        const textLength = trimmed.length;
+        const confidenceScore = Math.round(confidence * 100);
 
-        console.log(
-          `[Scraper Router] Hoàn thành OCR: ${input.fileName}`
-        );
+        await clearExtractedData(documentIdNumber);
+        await deleteOcrResultsByDocumentId(documentIdNumber);
+
+        await Promise.all([
+          ...hsCodes.map((code) =>
+            saveExtractedData(documentIdNumber, "hs_code", code, confidenceScore),
+          ),
+          ...productNames.map((name) =>
+            saveExtractedData(
+              documentIdNumber,
+              "product_name",
+              name,
+              confidenceScore,
+            ),
+          ),
+        ]);
+
+        const dbDocument = await getDocumentById(documentIdNumber);
+        const documentNumber = dbDocument?.documentNumber ?? input.documentId;
+        const documentTitle = dbDocument?.title ?? input.fileName;
+
+        await saveOcrResult({
+          documentId: documentIdNumber,
+          documentNumber,
+          documentTitle,
+          linkUrl: input.fileUrl,
+          status: "success",
+          extractedText: normalizedText,
+          hsCodes: JSON.stringify(hsCodes),
+          productNames: JSON.stringify(productNames),
+          textLength,
+          wordCount,
+          processingTime: Date.now() - startedAt,
+        });
+
+        await saveOcrStatistics({
+          documentId: documentIdNumber,
+          totalLinks: 1,
+          successfulLinks: 1,
+          failedLinks: 0,
+          totalHsCodes: hsCodes.length,
+          uniqueHsCodes: new Set(hsCodes).size,
+          totalProductNames: productNames.length,
+          uniqueProductNames: new Set(productNames).size,
+          totalTextLength: textLength,
+          totalWordCount: wordCount,
+          successRate: 100,
+        });
+
+        await updateDocumentOcrResult(input.documentId, {
+          extractedHsCodes: hsCodes,
+          extractedProductNames: productNames,
+          confidence,
+          rawText: normalizedText,
+        });
+        await updateProcessedStatus(documentIdNumber, "processed");
+
+        console.log(`[Scraper Router] Hoàn thành OCR: ${input.fileName}`);
         console.log(`  - HS codes: ${hsCodes.length}`);
         console.log(`  - Product names: ${productNames.length}`);
         console.log(`  - Confidence: ${(confidence * 100).toFixed(2)}%`);
@@ -101,6 +259,8 @@ export const scraperRouter = router({
           productNames,
           confidence,
           processedAt: new Date(),
+          textLength,
+          wordCount,
         };
       } catch (error) {
         console.error(
@@ -176,12 +336,45 @@ export const scraperRouter = router({
   /**
    * Lấy thông tin scraper status
    */
-  getStatus: publicProcedure.query(() => {
+  getStatus: publicProcedure.query(async () => {
+    const [latestLog, totalDocuments] = await Promise.all([
+      getLatestScrapeLog(),
+      getDocumentsTotal(),
+    ]);
+
+    if (!latestLog) {
+      return {
+        status: "idle",
+        lastScrapedAt: null,
+        documentsCount: totalDocuments,
+        message: "Chưa có lần thu thập nào. Bạn có thể khởi chạy ngay.",
+      };
+    }
+
+    const statusMap: Record<string, string> = {
+      running: "running",
+      completed: "ready",
+      failed: "failed",
+    };
+    const status = statusMap[latestLog.status as keyof typeof statusMap] ?? "ready";
+    const lastScrapedAt = latestLog.endTime ?? latestLog.startTime ?? null;
+
+    let message = "Scraper sẵn sàng để chạy";
+    if (latestLog.status === "running") {
+      message = `Đang thu thập dữ liệu (log #${latestLog.id}).`;
+    } else if (latestLog.status === "failed") {
+      message = latestLog.errorMessage
+        ? `Thu thập gần nhất thất bại: ${latestLog.errorMessage}`
+        : "Thu thập gần nhất thất bại.";
+    } else {
+      message = `Lần thu thập gần nhất tìm thấy ${latestLog.documentsFound} tài liệu, đã lưu ${latestLog.documentsDownloaded}.`;
+    }
+
     return {
-      status: "ready",
-      lastScrapedAt: null,
-      documentsCount: 0,
-      message: "Scraper sẵn sàng để chạy",
+      status,
+      lastScrapedAt,
+      documentsCount: totalDocuments,
+      message,
     };
   }),
 });

@@ -23,19 +23,19 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   {
-    label: "Bảng điều khiển",
-    href: "/tong-quan",
-    icon: <GaugeCircle className="h-4 w-4" aria-hidden="true" />,
-  },
-  {
-    label: "Tra cứu",
-    href: "/hs-code-lookup",
+    label: "Tra cứu mã HS",
+    href: "/",
     icon: <Search className="h-4 w-4" aria-hidden="true" />,
   },
   {
     label: "Công văn mới",
-    href: "/",
+    href: "/cong-van-moi",
     icon: <FileText className="h-4 w-4" aria-hidden="true" />,
+  },
+  {
+    label: "Bảng điều khiển",
+    href: "/tong-quan",
+    icon: <GaugeCircle className="h-4 w-4" aria-hidden="true" />,
   },
 ];
 

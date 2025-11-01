@@ -28,9 +28,9 @@ import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 
 const menuItems = [
-  { icon: LayoutDashboard, label: "Trang chủ", path: "/" },
+  { icon: LayoutDashboard, label: "Trang chủ", path: "/cong-van-moi" },
   { icon: Users, label: "Quản lý tài liệu", path: "/dashboard" },
-  { icon: Users, label: "Tra Cứu HS Code", path: "/hs-code-lookup" },
+  { icon: Users, label: "Tra Cứu HS Code", path: "/" },
   { icon: FileText, label: "Đăng Tài Liệu", path: "/documents-upload" },
 ];
 

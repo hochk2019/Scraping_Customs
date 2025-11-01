@@ -69,3 +69,11 @@
 | S3 | Kiểm thử & chuẩn hóa | Viết test e2e, thiết lập CI/CD, hoàn thiện tài liệu hướng dẫn, chuẩn hóa dữ liệu Unicode |
 
 Kế hoạch trên giúp làm rõ ưu tiên, giữ giao diện thân thiện nhưng vẫn mở rộng được cho các tính năng nâng cao như OCR, biểu đồ và quản trị lịch.
+
+## 6. Danh sách công việc tiếp theo (Cập nhật ngày 2025-02-14)
+- [x] Kết nối `scraperRouter.scrapeCustoms` với cơ sở dữ liệu: lưu tài liệu mới, tạo log thu thập và trả về số liệu thống kê chuẩn.
+- [x] Bật OCR thực sự trong `scraperRouter.processDocument`, lưu kết quả HS code/tên hàng và kết quả OCR vào bảng tương ứng.
+- [x] Chuẩn hóa API tài liệu: bổ sung `documents.create`, cập nhật `documents.list` trả về tổng bản ghi chính xác và hiện thực hoá tìm kiếm.
+- [x] Hoàn thiện mô-đun upload: thay `require` bằng `import` ESM, lưu metadata file, hiển thị danh sách file đã đăng.
+- [x] Cập nhật `scraperRouter.getStatus` đọc log mới nhất để phản ánh trạng thái thật.
+- [x] Đặt trang chủ là giao diện Tra cứu mã HS và đảm bảo công văn mới đăng sẽ xuất hiện trong bảng/tabs thích hợp.
