@@ -1,6 +1,35 @@
 import { eq, and, desc, count, gte, lte, or, like, sql, sum, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, userFeedback, documents, InsertDocument, scrapeLogs, InsertScrapeLog, scrapeSchedules, InsertScrapeSchedule, exportSelections, extractedData, hsCodes, documentHsCodes, referenceData, uploadedFiles, uploadedFileAnalyses, ocrRepository, InsertOcrRepository, ocrStatistics, InsertOcrStatistics } from "../drizzle/schema";
+import {
+  InsertUser,
+  users,
+  userFeedback,
+  documents,
+  InsertDocument,
+  scrapeLogs,
+  InsertScrapeLog,
+  scrapeSchedules,
+  InsertScrapeSchedule,
+  exportSelections,
+  extractedData,
+  hsCodes,
+  documentHsCodes,
+  referenceData,
+  uploadedFiles,
+  uploadedFileAnalyses,
+  ocrRepository,
+  InsertOcrRepository,
+  ocrStatistics,
+  InsertOcrStatistics,
+  scrapeJobsQueue,
+  InsertScrapeQueueJob,
+  ocrJobsQueue,
+  InsertOcrQueueJob,
+  aiJobsQueue,
+  InsertAiQueueJob,
+  documentEmbeddings,
+  InsertDocumentEmbedding,
+} from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -177,6 +206,135 @@ export async function getDocumentById(id: number) {
       updatedAt: item.updatedAt,
     })),
   };
+}
+
+type QueueJobType = "scrape" | "ocr" | "ai";
+
+export async function recordQueueJobStart(input: {
+  jobId: string;
+  documentId?: number;
+  type: QueueJobType;
+  payload?: string;
+  status?: "pending" | "processing";
+}) {
+  const db = await getDb();
+  if (!db) return;
+
+  const values: InsertScrapeQueueJob = {
+    jobId: input.jobId,
+    documentId: input.documentId ?? null,
+    type: input.type,
+    payload: input.payload ?? null,
+    status: input.status ?? "processing",
+    startedAt: input.status === "processing" ? new Date() : null,
+  };
+
+  await db
+    .insert(scrapeJobsQueue)
+    .values(values)
+    .onDuplicateKeyUpdate({
+      set: {
+        documentId: values.documentId,
+        type: values.type,
+        payload: values.payload,
+        status: values.status,
+        startedAt: values.startedAt,
+      },
+    });
+}
+
+export async function recordQueueJobSuccess(input: {
+  jobId: string;
+  durationMs?: number;
+}) {
+  const db = await getDb();
+  if (!db) return;
+
+  await db
+    .update(scrapeJobsQueue)
+    .set({
+      status: "completed",
+      completedAt: new Date(),
+      durationMs: input.durationMs ?? null,
+      errorMessage: null,
+    })
+    .where(eq(scrapeJobsQueue.jobId, input.jobId));
+}
+
+export async function recordQueueJobFailure(input: {
+  jobId: string;
+  errorMessage: string;
+}) {
+  const db = await getDb();
+  if (!db) return;
+
+  await db
+    .update(scrapeJobsQueue)
+    .set({
+      status: "failed",
+      errorMessage: input.errorMessage,
+      completedAt: new Date(),
+    })
+    .where(eq(scrapeJobsQueue.jobId, input.jobId));
+}
+
+export async function recordOcrJobStart(input: {
+  jobId: string;
+  documentId: number;
+  engine?: string;
+}) {
+  const db = await getDb();
+  if (!db) return;
+
+  const values: InsertOcrQueueJob = {
+    jobId: input.jobId,
+    documentId: input.documentId,
+    engine: input.engine ?? "builtin",
+    status: "processing",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+
+  await db
+    .insert(ocrJobsQueue)
+    .values(values)
+    .onDuplicateKeyUpdate({
+      set: {
+        documentId: values.documentId,
+        engine: values.engine,
+        status: "processing",
+        updatedAt: values.updatedAt,
+      },
+    });
+}
+
+export async function recordOcrJobCompletion(input: {
+  jobId: string;
+  status: "completed" | "failed";
+  durationMs?: number;
+  confidence?: number;
+  errorMessage?: string;
+}) {
+  const db = await getDb();
+  if (!db) return;
+
+  await db
+    .update(ocrJobsQueue)
+    .set({
+      status: input.status,
+      durationMs: input.durationMs ?? null,
+      confidence: input.confidence ?? null,
+      errorMessage: input.errorMessage ?? null,
+      updatedAt: new Date(),
+    })
+    .where(eq(ocrJobsQueue.jobId, input.jobId));
+
+  if (input.status === "failed") {
+    await db
+      .update(scrapeJobsQueue)
+      .set({ retryCount: sql`COALESCE(retryCount, 0) + 1` })
+      .where(eq(scrapeJobsQueue.jobId, input.jobId));
+  }
 }
 
 /**

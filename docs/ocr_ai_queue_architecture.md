@@ -92,10 +92,10 @@ flowchart LR
 
 ## Checklist triển khai
 
-- [ ] Cấu hình Redis & BullMQ trong `server/_core/queue.ts`.
-- [ ] Tạo worker riêng cho OCR (`server/scripts/workers/ocr-worker.ts`).
-- [ ] Refactor router upload (`server/scraper-router.ts`) để enqueue job.
-- [ ] Bổ sung migration bảng job trong thư mục `drizzle/`.
-- [ ] Xuất metric Prometheus từ worker (`/metrics`).
-- [ ] Viết test integration (Vitest + Testcontainers) mô phỏng Redis.
+- [x] Cấu hình Redis & BullMQ trong `server/_core/queue.ts`.
+- [x] Tạo worker riêng cho OCR (`server/scripts/workers/ocr-worker.ts`).
+- [x] Refactor router upload (`server/scraper-router.ts`) để enqueue job.
+- [x] Bổ sung migration bảng job trong thư mục `drizzle/`.
+- [x] Xuất metric Prometheus từ worker (`/metrics`).
+- [x] Viết test integration (Vitest + Testcontainers) mô phỏng Redis.
 

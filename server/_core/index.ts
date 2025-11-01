@@ -7,6 +7,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { getMetricsRegistry } from "../telemetry/queue-metrics";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -49,6 +50,12 @@ async function startServer() {
   } else {
     serveStatic(app);
   }
+
+  const registry = getMetricsRegistry();
+  app.get("/metrics", async (_req, res) => {
+    res.setHeader("Content-Type", registry.contentType);
+    res.send(await registry.metrics());
+  });
 
   const preferredPort = parseInt(process.env.PORT || "3000");
   const port = await findAvailablePort(preferredPort);

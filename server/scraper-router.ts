@@ -1,28 +1,18 @@
 import { publicProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { scrapeCustomsDocuments } from "./customs-scraper";
-import {
-  extractHsCodesFromText,
-  extractProductNamesFromText,
-  processOcr,
-} from "./ocr-processor";
+import { extractHsCodesFromText, extractProductNamesFromText } from "./ocr-processor";
 import { loadProductKeywordGroups } from "./product-keyword-service";
 import {
-  clearExtractedData,
   createScrapeLog,
-  deleteOcrResultsByDocumentId,
-  getDocumentById,
   getDocumentsTotal,
   getLatestScrapeLog,
-  saveExtractedData,
-  saveOcrResult,
-  saveOcrStatistics,
-  updateDocumentOcrResult,
-  updateProcessedStatus,
   updateScrapeLog,
   upsertDocument,
 } from "./db";
 import { deriveCustomsDocId } from "./document-utils";
+import { enqueueOcrJob } from "./queues/ocr-queue";
+import { ProcessOcrDocumentResult } from "./services/process-ocr-document";
 
 /**
  * Scraper Router - Xử lý scraping, OCR, và lưu dữ liệu
@@ -143,128 +133,42 @@ export const scraperRouter = router({
     )
     .mutation(async ({ input }: any) => {
       try {
-        console.log(
-          `[Scraper Router] Xử lý OCR cho: ${input.fileName}`
-        );
+        console.log(`[Scraper Router] Đưa OCR vào hàng đợi cho: ${input.fileName}`);
 
         const documentIdNumber = Number.parseInt(input.documentId, 10);
         if (!Number.isFinite(documentIdNumber)) {
           throw new Error("documentId không hợp lệ");
         }
 
-        const startedAt = Date.now();
-        let textToProcess = input.rawText?.trim() ?? "";
-        let hsCodes: string[] = [];
-        let productNames: string[] = [];
-        let confidence = 0;
-        let rawText = textToProcess;
+        const enqueueResult = await enqueueOcrJob({
+          documentId: documentIdNumber,
+          fileName: input.fileName.normalize("NFC"),
+          fileUrl: input.fileUrl,
+          rawText: input.rawText?.normalize("NFC"),
+        });
 
-        if (!textToProcess) {
-          const ocrResult = await processOcr(
-            input.documentId,
-            input.fileName,
-            input.fileUrl,
-          );
-          rawText = ocrResult.rawText;
-          textToProcess = rawText.trim();
-          hsCodes = ocrResult.extractedHsCodes;
-          productNames = ocrResult.extractedProductNames;
-          confidence = ocrResult.confidence;
-        } else {
-          const keywordGroups = await loadProductKeywordGroups();
-          rawText = textToProcess;
-          hsCodes = extractHsCodesFromText(textToProcess);
-          productNames = extractProductNamesFromText(textToProcess, keywordGroups);
-          const totalIndicators = hsCodes.length + productNames.length;
-          const wordCount = textToProcess ? textToProcess.split(/\s+/).length : 0;
-          confidence =
-            totalIndicators === 0
-              ? 0
-              : Math.min(1, totalIndicators / Math.max(wordCount, 10));
+        if (enqueueResult.status === "processed") {
+          const result = enqueueResult.result as ProcessOcrDocumentResult;
+          if (!result.success) {
+            return {
+              success: false,
+              message: `Lỗi xử lý ${input.fileName}`,
+              error: result.error ?? "Không xác định",
+            };
+          }
+
+          return result;
         }
-
-        const normalizedText = rawText.normalize("NFC");
-        const trimmed = normalizedText.trim();
-        const wordCount = trimmed ? trimmed.split(/\s+/).length : 0;
-        const textLength = trimmed.length;
-        const confidenceScore = Math.round(confidence * 100);
-
-        await clearExtractedData(documentIdNumber);
-        await deleteOcrResultsByDocumentId(documentIdNumber);
-
-        await Promise.all([
-          ...hsCodes.map((code) =>
-            saveExtractedData(documentIdNumber, "hs_code", code, confidenceScore),
-          ),
-          ...productNames.map((name) =>
-            saveExtractedData(
-              documentIdNumber,
-              "product_name",
-              name,
-              confidenceScore,
-            ),
-          ),
-        ]);
-
-        const dbDocument = await getDocumentById(documentIdNumber);
-        const documentNumber = dbDocument?.documentNumber ?? input.documentId;
-        const documentTitle = dbDocument?.title ?? input.fileName;
-
-        await saveOcrResult({
-          documentId: documentIdNumber,
-          documentNumber,
-          documentTitle,
-          linkUrl: input.fileUrl,
-          status: "success",
-          extractedText: normalizedText,
-          hsCodes: JSON.stringify(hsCodes),
-          productNames: JSON.stringify(productNames),
-          textLength,
-          wordCount,
-          processingTime: Date.now() - startedAt,
-        });
-
-        await saveOcrStatistics({
-          documentId: documentIdNumber,
-          totalLinks: 1,
-          successfulLinks: 1,
-          failedLinks: 0,
-          totalHsCodes: hsCodes.length,
-          uniqueHsCodes: new Set(hsCodes).size,
-          totalProductNames: productNames.length,
-          uniqueProductNames: new Set(productNames).size,
-          totalTextLength: textLength,
-          totalWordCount: wordCount,
-          successRate: 100,
-        });
-
-        await updateDocumentOcrResult(input.documentId, {
-          extractedHsCodes: hsCodes,
-          extractedProductNames: productNames,
-          confidence,
-          rawText: normalizedText,
-        });
-        await updateProcessedStatus(documentIdNumber, "processed");
-
-        console.log(`[Scraper Router] Hoàn thành OCR: ${input.fileName}`);
-        console.log(`  - HS codes: ${hsCodes.length}`);
-        console.log(`  - Product names: ${productNames.length}`);
-        console.log(`  - Confidence: ${(confidence * 100).toFixed(2)}%`);
 
         return {
           success: true,
-          documentId: input.documentId,
-          fileName: input.fileName,
-          hsCodes,
-          productNames,
-          confidence,
-          processedAt: new Date(),
-          textLength,
-          wordCount,
+          queued: true,
+          jobId: enqueueResult.jobId,
+          message: "Tài liệu đã được đưa vào hàng đợi OCR",
         };
       } catch (error) {
         console.error(
-          `[Scraper Router] Lỗi xử lý ${input.fileName}:`,
+          `[Scraper Router] Lỗi enqueue ${input.fileName}:`,
           error
         );
         return {
@@ -273,7 +177,8 @@ export const scraperRouter = router({
           error: error instanceof Error ? error.message : "Unknown error",
         };
       }
-    }),
+    })
+
 
   /**
    * Trích xuất HS code từ văn bản
