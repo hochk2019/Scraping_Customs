@@ -31,11 +31,13 @@ import {
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 
+type EnhancedDocumentListItem = DocumentListItem & { isOffline?: boolean };
+
 interface DocumentDetailDrawerProps {
   documentId: number | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  fallbackDocument?: DocumentListItem | null;
+  fallbackDocument?: EnhancedDocumentListItem | null;
 }
 
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -137,6 +139,7 @@ export function DocumentDetailDrawer({
   onOpenChange,
   fallbackDocument,
 }: DocumentDetailDrawerProps) {
+  const isOfflineDocument = Boolean(fallbackDocument?.isOffline);
   const {
     data: document,
     isLoading,
@@ -144,8 +147,9 @@ export function DocumentDetailDrawer({
   } = trpc.documents.getById.useQuery(
     { id: documentId ?? 0 },
     {
-      enabled: Boolean(open && documentId),
+      enabled: Boolean(open && documentId && !isOfflineDocument),
       staleTime: 60_000,
+      retry: isOfflineDocument ? false : undefined,
     }
   );
 

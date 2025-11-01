@@ -8,7 +8,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { FileText, Calendar, Building2, Filter, Eye, Download } from "lucide-react";
+import { FileText, Calendar, Building2, Filter, Eye, Download, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -38,6 +38,8 @@ import {
 import { cn } from "@/lib/utils";
 import { DocumentDetailDrawer, type DocumentListItem } from "./DocumentDetailDrawer";
 import { Skeleton } from "@/components/ui/skeleton";
+import { offlineDocuments } from "@/data/offline-documents";
+import { UNAUTHED_ERR_MSG } from "@shared/const";
 
 interface RecentDocumentsSidebarProps {
   variant?: "sidebar" | "panel" | "table";
@@ -45,6 +47,8 @@ interface RecentDocumentsSidebarProps {
   limit?: number;
   pageSize?: number;
 }
+
+type EnhancedDocument = DocumentListItem & { isOffline?: boolean };
 
 export default function RecentDocumentsSidebar({
   variant = "sidebar",
@@ -54,8 +58,51 @@ export default function RecentDocumentsSidebar({
 }: RecentDocumentsSidebarProps = {}) {
   // Fetch recent documents
   const queryLimit = variant === "table" ? Math.max(limit, 60) : limit;
-  const { data: documentsData, isLoading } = trpc.documents.list.useQuery({ limit: queryLimit });
-  const documents = useMemo(() => documentsData?.documents ?? [], [documentsData]);
+  const {
+    data: documentsData,
+    isLoading,
+    error,
+    isFetched,
+  } = trpc.documents.list.useQuery(
+    { limit: queryLimit },
+    { retry: 0 }
+  );
+  const apiDocuments = useMemo(() => documentsData?.documents ?? [], [documentsData]);
+  const normalizedOfflineDocs = useMemo<EnhancedDocument[]>(
+    () => offlineDocuments.map((doc, index) => ({
+      ...doc,
+      id: doc.id ?? -(index + 1),
+      isOffline: true,
+    })),
+    []
+  );
+
+  const isUnauthorized = error?.message === UNAUTHED_ERR_MSG;
+  const usingOfflineData = useMemo(() => {
+    if (apiDocuments.length > 0) {
+      return false;
+    }
+    if (isLoading && !error) {
+      return false;
+    }
+    if (isUnauthorized) {
+      return true;
+    }
+    if (error) {
+      return true;
+    }
+    if (isFetched && (documentsData?.documents.length ?? 0) === 0) {
+      return true;
+    }
+    return false;
+  }, [apiDocuments.length, documentsData?.documents.length, error, isFetched, isLoading, isUnauthorized]);
+
+  const documents = useMemo<EnhancedDocument[]>(() => {
+    if (usingOfflineData) {
+      return normalizedOfflineDocs;
+    }
+    return apiDocuments.map((doc) => ({ ...doc, isOffline: false }));
+  }, [apiDocuments, normalizedOfflineDocs, usingOfflineData]);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [agencyFilter, setAgencyFilter] = useState("tat-ca");
@@ -63,7 +110,7 @@ export default function RecentDocumentsSidebar({
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
   const [page, setPage] = useState(1);
-  const [selectedDocument, setSelectedDocument] = useState<DocumentListItem | null>(null);
+  const [selectedDocument, setSelectedDocument] = useState<EnhancedDocument | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
 
   const getStatusBadge = (status: string, size: "sm" | "md" = "sm") => {
@@ -212,18 +259,27 @@ export default function RecentDocumentsSidebar({
           <CardHeader className="pb-4">
             <CardTitle className="flex items-center gap-2 text-lg">
               <FileText className="h-5 w-5 text-blue-600" />
-            Bảng công văn mới
-          </CardTitle>
-          <CardDescription>
-            Lọc nhanh theo cơ quan, loại văn bản và thời gian ban hành
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
-              <Filter className="h-4 w-4" />
-              Bộ lọc hiển thị
-            </div>
+              Bảng công văn mới
+            </CardTitle>
+            <CardDescription>
+              Lọc nhanh theo cơ quan, loại văn bản và thời gian ban hành
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {usingOfflineData && (
+              <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-700">
+                <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                <span>
+                  Đang hiển thị dữ liệu mẫu do chưa xác thực vào hệ thống.
+                  Đăng nhập để xem và lọc dữ liệu thời gian thực từ cơ sở dữ liệu.
+                </span>
+              </div>
+            )}
+            <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                <Filter className="h-4 w-4" />
+                Bộ lọc hiển thị
+              </div>
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-1">
                 <Label htmlFor="search-document">Từ khóa</Label>
@@ -331,7 +387,7 @@ export default function RecentDocumentsSidebar({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isLoading ? (
+                {isLoading && documents.length === 0 ? (
                   Array.from({ length: Math.min(pageSize, 5) }).map((_, index) => (
                     <TableRow key={`loading-${index}`}>
                       <TableCell colSpan={6}>
@@ -444,7 +500,7 @@ export default function RecentDocumentsSidebar({
         <DocumentDetailDrawer
           open={isDetailOpen}
           onOpenChange={handleDrawerChange}
-          documentId={selectedDocument?.id ?? null}
+          documentId={selectedDocument?.isOffline ? null : selectedDocument?.id ?? null}
           fallbackDocument={selectedDocument ?? undefined}
         />
       </>
@@ -474,7 +530,16 @@ export default function RecentDocumentsSidebar({
             <CardDescription>Công văn cập nhật gần đây</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {isLoading ? (
+            {usingOfflineData && (
+              <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-700">
+                <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                <span>
+                  Đang hiển thị dữ liệu mẫu lấy trực tiếp từ Hải quan gần nhất.
+                  Kết nối vào API để đồng bộ số liệu mới nhất và trạng thái xử lý OCR.
+                </span>
+              </div>
+            )}
+            {isLoading && documents.length === 0 ? (
               <div className="space-y-3">
                 {Array.from({ length: limit }).map((_, index) => (
                   <div key={`loading-card-${index}`} className="space-y-2 rounded-lg border p-3">
@@ -558,12 +623,12 @@ export default function RecentDocumentsSidebar({
           </CardContent>
         </Card>
       </div>
-      <DocumentDetailDrawer
-        open={isDetailOpen}
-        onOpenChange={handleDrawerChange}
-        documentId={selectedDocument?.id ?? null}
-        fallbackDocument={selectedDocument ?? undefined}
-      />
+        <DocumentDetailDrawer
+          open={isDetailOpen}
+          onOpenChange={handleDrawerChange}
+          documentId={selectedDocument?.isOffline ? null : selectedDocument?.id ?? null}
+          fallbackDocument={selectedDocument ?? undefined}
+        />
     </>
   );
 }
