@@ -1,6 +1,6 @@
 import puppeteer from "puppeteer";
 import type { Browser, Page } from "puppeteer";
-import axios from "axios";
+import { getWithNetwork } from "./network-client";
 
 /**
  * Advanced Web Scraper cho trang Hải quan Việt Nam
@@ -494,13 +494,9 @@ async function downloadPdf(url: string): Promise<Buffer> {
   try {
     console.log(`[Scraper] Tải PDF từ: ${url}`);
 
-    const response = await axios.get(url, {
+    const response = await getWithNetwork<ArrayBuffer>(url, {
       responseType: "arraybuffer",
       timeout: 30000, // 30 seconds
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      },
     });
 
     console.log(`[Scraper] Tải PDF thành công: ${url}`);

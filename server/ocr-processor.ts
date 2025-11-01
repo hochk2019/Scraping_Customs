@@ -1,4 +1,3 @@
-import axios from "axios";
 import { extractPdfText } from "./pdf-utils";
 import {
   DEFAULT_PRODUCT_KEYWORD_GROUPS,
@@ -7,6 +6,7 @@ import {
   loadProductKeywordGroups,
   normalizeKeyword,
 } from "./product-keyword-service";
+import { getWithNetwork } from "./network-client";
 // PDF parsing sẽ được xử lý thông qua server endpoint
 
 /**
@@ -42,12 +42,8 @@ export async function extractTextFromPdf(pdfBuffer: Buffer): Promise<string> {
  */
 export async function downloadPdfFromUrl(url: string): Promise<Buffer> {
   try {
-    const response = await axios.get(url, {
+    const response = await getWithNetwork<ArrayBuffer>(url, {
       responseType: "arraybuffer",
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      },
       timeout: 30000,
     });
 

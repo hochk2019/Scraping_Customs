@@ -1,6 +1,6 @@
 import puppeteer, { Browser, Page } from "puppeteer";
-import axios from "axios";
 import { retryWithBackoff } from "./retry-utils";
+import { getWithNetwork } from "./network-client";
 
 /**
  * Retry wrapper cho scrapeDetailPage
@@ -66,13 +66,9 @@ export async function downloadPdfWithRetry(url: string): Promise<Buffer | null> 
   const result = await retryWithBackoff(
     async () => {
       console.log(`[Scraper] Tai PDF tu: ${url}`);
-      const response = await axios.get(url, {
+      const response = await getWithNetwork<ArrayBuffer>(url, {
         responseType: "arraybuffer",
         timeout: 30000,
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        },
       });
       console.log(`[Scraper] Tai PDF thanh cong: ${url}`);
       return Buffer.from(response.data);

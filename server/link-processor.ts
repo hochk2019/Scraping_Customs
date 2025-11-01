@@ -1,6 +1,6 @@
-import axios from "axios";
 import * as pdfParse from "pdf-parse";
-import { extractHsCodesFromText, extractProductNamesFromText, extractKeyDataFromText } from "./file-processor";
+import { extractKeyDataFromText } from "./file-processor";
+import { getWithNetwork } from "./network-client";
 
 /**
  * Tải và xử lý file PDF từ URL
@@ -16,12 +16,9 @@ export async function downloadAndProcessPdf(
       console.log(`[LinkProcessor] Downloading PDF from ${fileUrl} (attempt ${attempt}/${maxRetries})`);
 
       // Tải file PDF
-      const response = await axios.get(fileUrl, {
+      const response = await getWithNetwork<ArrayBuffer>(fileUrl, {
         responseType: "arraybuffer",
         timeout: 30000,
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        },
       });
 
       const buffer = Buffer.from(response.data);
