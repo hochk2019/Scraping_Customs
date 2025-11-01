@@ -8,7 +8,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { FileText, Calendar, Building2, ExternalLink, Filter } from "lucide-react";
+import { FileText, Calendar, Building2, Filter, Eye, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -36,6 +36,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { DocumentDetailDrawer, type DocumentListItem } from "./DocumentDetailDrawer";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface RecentDocumentsSidebarProps {
   variant?: "sidebar" | "panel" | "table";
@@ -52,8 +54,8 @@ export default function RecentDocumentsSidebar({
 }: RecentDocumentsSidebarProps = {}) {
   // Fetch recent documents
   const queryLimit = variant === "table" ? Math.max(limit, 60) : limit;
-  const { data: documentsData } = trpc.documents.list.useQuery({ limit: queryLimit });
-  const documents = documentsData?.documents || [];
+  const { data: documentsData, isLoading } = trpc.documents.list.useQuery({ limit: queryLimit });
+  const documents = useMemo(() => documentsData?.documents ?? [], [documentsData]);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [agencyFilter, setAgencyFilter] = useState("tat-ca");
@@ -61,18 +63,43 @@ export default function RecentDocumentsSidebar({
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
   const [page, setPage] = useState(1);
+  const [selectedDocument, setSelectedDocument] = useState<DocumentListItem | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, size: "sm" | "md" = "sm") => {
+    const baseClass = size === "md" ? "px-3 py-1 text-xs" : "text-xs";
     if (status === "downloaded") {
-      return <Badge className="bg-green-100 text-green-800 text-xs">Đã tải</Badge>;
-    } else if (status === "failed") {
-      return <Badge className="bg-red-100 text-red-800 text-xs">Lỗi</Badge>;
+      return <Badge className={`${baseClass} bg-green-100 text-green-800`}>Đã tải</Badge>;
     }
-    return <Badge className="bg-yellow-100 text-yellow-800 text-xs">Chờ xử lý</Badge>;
+    if (status === "failed") {
+      return <Badge className={`${baseClass} bg-red-100 text-red-800`}>Lỗi</Badge>;
+    }
+    return <Badge className={`${baseClass} bg-yellow-100 text-yellow-800`}>Chờ xử lý</Badge>;
   };
 
-  const formatDate = (date: string | Date) => {
-    return new Date(date).toLocaleDateString("vi-VN", {
+  const parseDateValue = (value: string | Date | null | undefined) => {
+    if (!value) return null;
+    if (value instanceof Date) return value;
+    const trimmed = value.trim();
+    const parts = trimmed.split(/[/-]/);
+    if (parts.length === 3 && parts[0].length <= 2) {
+      const [day, month, year] = parts;
+      const iso = `${year.padStart(4, "0")}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+      const normalized = new Date(iso);
+      if (!Number.isNaN(normalized.getTime())) {
+        return normalized;
+      }
+    }
+    const parsed = new Date(trimmed);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
+  const formatDate = (date: string | Date | null | undefined) => {
+    const parsed = parseDateValue(date);
+    if (!parsed) {
+      return typeof date === "string" ? date : "—";
+    }
+    return parsed.toLocaleDateString("vi-VN", {
       day: "2-digit",
       month: "2-digit",
       year: "numeric",
@@ -88,7 +115,7 @@ export default function RecentDocumentsSidebar({
   const filterOptions = useMemo(() => {
     const agencies = new Set<string>();
     const types = new Set<string>();
-    documents.forEach((doc: any) => {
+    documents.forEach((doc) => {
       if (doc.issuingAgency) {
         agencies.add(doc.issuingAgency);
       }
@@ -103,16 +130,13 @@ export default function RecentDocumentsSidebar({
   }, [documents]);
 
   const documentIdsKey = useMemo(
-    () =>
-      documents
-        .map((doc: any) => doc.id ?? doc.documentNumber ?? "")
-        .join("|"),
+    () => documents.map((doc) => doc.id ?? doc.documentNumber ?? "").join("|"),
     [documents]
   );
 
   const filteredDocuments = useMemo(() => {
     const normalizedSearch = normalizeText(searchTerm);
-    return documents.filter((doc: any) => {
+    return documents.filter((doc) => {
       const matchesSearch =
         !normalizedSearch ||
         normalizeText(doc.documentNumber).includes(normalizedSearch) ||
@@ -125,7 +149,7 @@ export default function RecentDocumentsSidebar({
       const matchesType =
         typeFilter === "tat-ca" || normalizeText(doc.documentType) === normalizeText(typeFilter);
 
-      const issueDate = doc.issueDate ? new Date(doc.issueDate) : null;
+      const issueDate = parseDateValue(doc.issueDate ?? null);
       const matchesStart = startDate ? (issueDate ? issueDate >= new Date(startDate) : false) : true;
       const matchesEnd = endDate ? (issueDate ? issueDate <= new Date(endDate) : false) : true;
 
@@ -163,12 +187,31 @@ export default function RecentDocumentsSidebar({
     setPage(Math.min(Math.max(newPage, 1), totalPages));
   };
 
+  const handleOpenDetail = (doc: DocumentListItem) => {
+    setSelectedDocument(doc);
+    setIsDetailOpen(true);
+  };
+
+  const handleDownloadDocument = (doc: DocumentListItem) => {
+    if (doc.fileUrl) {
+      window.open(doc.fileUrl, "_blank", "noopener");
+    }
+  };
+
+  const handleDrawerChange = (open: boolean) => {
+    setIsDetailOpen(open);
+    if (!open) {
+      setSelectedDocument(null);
+    }
+  };
+
   if (variant === "table") {
     return (
-      <Card className={cn("border shadow-sm", className)}>
-        <CardHeader className="pb-4">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <FileText className="h-5 w-5 text-blue-600" />
+      <>
+        <Card className={cn("border shadow-sm", className)}>
+          <CardHeader className="pb-4">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <FileText className="h-5 w-5 text-blue-600" />
             Bảng công văn mới
           </CardTitle>
           <CardDescription>
@@ -288,9 +331,17 @@ export default function RecentDocumentsSidebar({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginatedDocuments.length > 0 ? (
-                  paginatedDocuments.map((doc: any) => (
-                    <TableRow key={doc.id}>
+                {isLoading ? (
+                  Array.from({ length: Math.min(pageSize, 5) }).map((_, index) => (
+                    <TableRow key={`loading-${index}`}>
+                      <TableCell colSpan={6}>
+                        <Skeleton className="h-6 w-full" />
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : paginatedDocuments.length > 0 ? (
+                  paginatedDocuments.map((doc, index) => (
+                    <TableRow key={doc.id ?? doc.documentNumber ?? `row-${index}`}>
                       <TableCell className="font-mono text-xs font-semibold text-blue-700">
                         {doc.documentNumber || "—"}
                       </TableCell>
@@ -306,25 +357,30 @@ export default function RecentDocumentsSidebar({
                         {doc.issuingAgency || "—"}
                       </TableCell>
                       <TableCell className="text-xs text-slate-600">
-                        {doc.issueDate ? formatDate(doc.issueDate) : "—"}
+                        {formatDate(doc.issueDate)}
                       </TableCell>
-                      <TableCell>{getStatusBadge(doc.status)}</TableCell>
+                      <TableCell>{getStatusBadge(doc.status ?? "pending")}</TableCell>
                       <TableCell className="text-right text-xs">
                         <div className="flex justify-end gap-2">
-                          {doc.fileUrl && (
-                            <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
-                              <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer">
-                                PDF
-                              </a>
-                            </Button>
-                          )}
-                          {doc.detailUrl && (
-                            <Button variant="ghost" size="sm" className="h-8 text-xs" asChild>
-                              <a href={doc.detailUrl} target="_blank" rel="noopener noreferrer">
-                                Chi tiết
-                              </a>
-                            </Button>
-                          )}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs"
+                            onClick={() => handleDownloadDocument(doc)}
+                            disabled={!doc.fileUrl}
+                          >
+                            <Download className="mr-1 h-3 w-3" />
+                            PDF
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 text-xs"
+                            onClick={() => handleOpenDetail(doc)}
+                          >
+                            <Eye className="mr-1 h-3 w-3" />
+                            Chi tiết
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -384,124 +440,130 @@ export default function RecentDocumentsSidebar({
             </PaginationContent>
           </Pagination>
         </CardContent>
-      </Card>
+        </Card>
+        <DocumentDetailDrawer
+          open={isDetailOpen}
+          onOpenChange={handleDrawerChange}
+          documentId={selectedDocument?.id ?? null}
+          fallbackDocument={selectedDocument ?? undefined}
+        />
+      </>
     );
   }
 
   return (
-    <div
-      className={cn(
-        "w-full",
-        variant === "sidebar" ? "lg:w-80" : "",
-        className
-      )}
-    >
-      <Card
+    <>
+      <div
         className={cn(
-          "h-full",
-          variant === "sidebar" ? "sticky top-20" : "border shadow-sm"
+          "w-full",
+          variant === "sidebar" ? "lg:w-80" : "",
+          className
         )}
       >
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5 text-blue-600" />
-            Tài Liệu Mới
-          </CardTitle>
-          <CardDescription>Công văn cập nhật gần đây</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {documents && documents.length > 0 ? (
-            <>
-              {documents.map((doc: any) => (
-                <div
-                  key={doc.id}
-                  className="p-3 border rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  {/* Document Number & Status */}
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <span className="text-xs font-mono font-bold text-blue-600 flex-1">
-                      {doc.documentNumber}
-                    </span>
-                    {getStatusBadge(doc.status)}
-                  </div>
-
-                  {/* Title */}
-                  <p className="text-sm font-medium text-gray-900 line-clamp-2 mb-2">
-                    {doc.title}
-                  </p>
-
-                  {/* Agency & Date */}
-                  <div className="space-y-1 mb-3">
-                    {doc.issuingAgency && (
-                      <div className="flex items-center gap-2 text-xs text-gray-600">
-                        <Building2 className="h-3 w-3" />
-                        <span className="line-clamp-1">{doc.issuingAgency}</span>
-                      </div>
-                    )}
-                    {doc.issueDate && (
-                      <div className="flex items-center gap-2 text-xs text-gray-600">
-                        <Calendar className="h-3 w-3" />
-                        <span>{formatDate(doc.issueDate)}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Summary */}
-                  {doc.summary && (
-                    <p className="text-xs text-gray-600 line-clamp-2 mb-3">
-                      {doc.summary}
-                    </p>
-                  )}
-
-                  {/* Links */}
-                  <div className="flex gap-2">
-                    {doc.fileUrl && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-xs flex-1"
-                        asChild
-                      >
-                        <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer">
-                          <ExternalLink className="h-3 w-3 mr-1" />
-                          Tệp PDF
-                        </a>
-                      </Button>
-                    )}
-                    {doc.detailUrl && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-xs flex-1"
-                        asChild
-                      >
-                        <a href={doc.detailUrl} target="_blank" rel="noopener noreferrer">
-                          <ExternalLink className="h-3 w-3 mr-1" />
-                          Chi tiết
-                        </a>
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ))}
-
-              {/* View All Button */}
-              <Button
-                variant="outline"
-                className="w-full mt-4"
-                asChild
-              >
-                <a href="/documents-upload">Xem Tất Cả</a>
-              </Button>
-            </>
-          ) : (
-            <div className="text-center py-6 text-gray-500">
-              <FileText className="h-10 w-10 mx-auto mb-2 opacity-30" />
-              <p className="text-sm">Chưa có tài liệu nào</p>
-            </div>
+        <Card
+          className={cn(
+            "h-full",
+            variant === "sidebar" ? "sticky top-20" : "border shadow-sm"
           )}
-        </CardContent>
-      </Card>
-    </div>
+        >
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-blue-600" />
+              Tài Liệu Mới
+            </CardTitle>
+            <CardDescription>Công văn cập nhật gần đây</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {isLoading ? (
+              <div className="space-y-3">
+                {Array.from({ length: limit }).map((_, index) => (
+                  <div key={`loading-card-${index}`} className="space-y-2 rounded-lg border p-3">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-3 w-2/3" />
+                  </div>
+                ))}
+              </div>
+            ) : documents.length > 0 ? (
+              <>
+                {documents.map((doc) => (
+                  <div
+                    key={doc.id ?? doc.documentNumber}
+                    className="transition-colors rounded-lg border p-3 hover:bg-gray-50"
+                  >
+                    <div className="mb-2 flex items-start justify-between gap-2">
+                      <span className="flex-1 text-xs font-mono font-bold text-blue-600">
+                        {doc.documentNumber || "Chưa rõ"}
+                      </span>
+                      {getStatusBadge(doc.status ?? "pending", "md")}
+                    </div>
+
+                    <p className="mb-2 line-clamp-2 text-sm font-medium text-gray-900">
+                      {doc.title || "Không có trích yếu"}
+                    </p>
+
+                    <div className="mb-3 space-y-1">
+                      {doc.issuingAgency && (
+                        <div className="flex items-center gap-2 text-xs text-gray-600">
+                          <Building2 className="h-3 w-3" />
+                          <span className="line-clamp-1">{doc.issuingAgency}</span>
+                        </div>
+                      )}
+                      {doc.issueDate && (
+                        <div className="flex items-center gap-2 text-xs text-gray-600">
+                          <Calendar className="h-3 w-3" />
+                          <span>{formatDate(doc.issueDate)}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {doc.summary && (
+                      <p className="mb-3 line-clamp-2 text-xs text-gray-600">{doc.summary}</p>
+                    )}
+
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => handleOpenDetail(doc)}
+                      >
+                        <Eye className="mr-2 h-3 w-3" />
+                        Xem chi tiết
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => handleDownloadDocument(doc)}
+                        disabled={!doc.fileUrl}
+                      >
+                        <Download className="mr-2 h-3 w-3" />
+                        Mở PDF
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+
+                <Button variant="outline" className="mt-4 w-full" asChild>
+                  <a href="/documents-upload">Xem Tất Cả</a>
+                </Button>
+              </>
+            ) : (
+              <div className="py-6 text-center text-gray-500">
+                <FileText className="mx-auto mb-2 h-10 w-10 opacity-30" />
+                <p className="text-sm">Chưa có tài liệu nào</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+      <DocumentDetailDrawer
+        open={isDetailOpen}
+        onOpenChange={handleDrawerChange}
+        documentId={selectedDocument?.id ?? null}
+        fallbackDocument={selectedDocument ?? undefined}
+      />
+    </>
   );
 }

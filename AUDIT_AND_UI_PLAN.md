@@ -49,6 +49,11 @@
 - [x] Bổ sung aria-label, trạng thái active cho điều hướng và hỗ trợ di động bằng sheet menu để cải thiện truy cập.【F:client/src/layouts/MainLayout.tsx†L55-L170】
 - [x] Cập nhật kế hoạch và tài liệu ngay trong file này sau mỗi thay đổi, bảo đảm lịch sử nâng cấp rõ ràng.【F:AUDIT_AND_UI_PLAN.md†L1-L120】
 
+### Giai đoạn E – Trải nghiệm chi tiết & dữ liệu OCR
+- [x] Mở rộng API `documents.getById` trả kèm danh sách dữ liệu nhận dạng để giao diện hiển thị đầy đủ kết quả OCR.【F:server/db.ts†L116-L139】
+- [x] Thiết kế ngăn kéo chi tiết tài liệu với metadata, tóm tắt, dữ liệu OCR và hành động tải/sao chép, đảm bảo xử lý Unicode ổn định.【F:client/src/components/DocumentDetailDrawer.tsx†L1-L258】
+- [x] Cập nhật bảng và sidebar công văn để mở ngăn chi tiết, bổ sung skeleton tải và chuẩn hóa xử lý ngày định dạng dd/mm/yyyy.【F:client/src/components/RecentDocumentsSidebar.tsx†L1-L404】
+
 ## 4. Kế hoạch kiểm thử & đảm bảo chất lượng
 1. **Kiểm thử đơn vị**: chạy `pnpm test --filter="server"` cho các hàm scraper, OCR; bổ sung test mới cho logic phân trang Puppeteer (mock DOM) và dựng URL tuyệt đối.
 2. **Kiểm thử tích hợp**: dùng `pnpm vitest run server/__tests__/scraper.e2e.test.ts` (hoặc tạo mới) để mô phỏng chuỗi scrape → tải PDF → trích xuất văn bản, đảm bảo Unicode giữ nguyên.

@@ -122,8 +122,30 @@ export async function getDocumentById(id: number) {
     .from(documents)
     .where(eq(documents.id, id))
     .limit(1);
-  
-  return result.length > 0 ? result[0] : null;
+
+  if (result.length === 0) {
+    return null;
+  }
+
+  const [document] = result;
+
+  const documentExtractedData = await db
+    .select()
+    .from(extractedData)
+    .where(eq(extractedData.documentId, id));
+
+  return {
+    ...document,
+    extractedData: documentExtractedData.map((item) => ({
+      id: item.id,
+      dataType: item.dataType,
+      value: item.value,
+      confidence: item.confidence,
+      notes: item.notes,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+    })),
+  };
 }
 
 /**
