@@ -1,5 +1,11 @@
-import axios from "axios";
+import type { Mock } from "vitest";
 import { afterEach, describe, expect, test, vi } from "vitest";
+
+vi.mock("./network-client", () => ({
+  getWithNetwork: vi.fn(),
+}));
+
+import { getWithNetwork } from "./network-client";
 import { scrapeCustomsDocuments } from "./customs-scraper";
 
 const LISTING_HTML = `
@@ -33,18 +39,14 @@ afterEach(() => {
 
 describe("scrapeCustomsDocuments", () => {
   test("map dữ liệu chi tiết và fileUrl chính xác", async () => {
-    const mockGet = vi.spyOn(axios, "get");
+    const mockGet = getWithNetwork as unknown as Mock;
 
-    mockGet.mockResolvedValueOnce({ data: LISTING_HTML } as any);
-    mockGet.mockResolvedValueOnce({ data: DETAIL_HTML } as any);
+    mockGet.mockResolvedValueOnce({ data: LISTING_HTML });
+    mockGet.mockResolvedValueOnce({ data: DETAIL_HTML });
 
     const documents = await scrapeCustomsDocuments({ maxPages: 1 });
 
     expect(mockGet).toHaveBeenCalledTimes(2);
-    expect(mockGet).toHaveBeenNthCalledWith(1, expect.any(String), {
-      headers: expect.any(Object),
-      proxy: false,
-    });
 
     const [document] = documents;
     expect(document).toBeDefined();

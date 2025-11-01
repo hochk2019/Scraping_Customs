@@ -25,6 +25,12 @@ import {
   updateUserRole,
   deleteUser,
   searchUsers,
+  upsertDocument,
+  searchDocuments,
+  saveUploadedFile,
+  updateUploadedFileStatus,
+  getUserUploadedFilesWithTotal,
+  saveUploadedFileAnalysis,
 } from "./db";
 import { scrapeCustomsData } from "./scraper";
 import { adminRouter } from "./admin-router";
@@ -33,12 +39,17 @@ import { hsCodeRouter } from "./hsCode-router";
 import { scrapingHistoryRouter } from "./scraping-history-router";
 import { progressRouter } from "./progress-router";
 import { scrapingChartsRouter } from "./scraping-charts-router";
+import { scraperRouter as pipelineRouter } from "./scraper-router";
 import {
   createScheduledTask,
   stopScheduledTask,
   updateScheduledTask,
 } from "./scheduler";
 import { getDb, saveFeedback, getUserFeedback, updateFeedbackStatus, getFeedbackWithUser, saveOcrResult, saveMultipleOcrResults, saveOcrStatistics, updateOcrStatistics, getOcrStatistics } from "./db";
+import { deriveCustomsDocId } from "./document-utils";
+import os from "os";
+import path from "path";
+import { promises as fsp } from "fs";
 import { userFeedback } from "../drizzle/schema";
 import { notifyOwner } from "./_core/notification";
 import { processLink, processMultipleLinks, calculateStatistics } from "./link-processor";
@@ -184,47 +195,51 @@ const fileUploadRouter = router({
       }
 
       try {
-        // Import file processor
-        const { processFile, extractKeyDataFromText, extractHsCodesFromText, analyzeExtractedData } = await import("./file-processor");
-        const fs = require("fs");
-        const path = require("path");
-        const os = require("os");
-        
-        // Giải mã Base64 và lưu file tạm
+        const {
+          processFile,
+          extractKeyDataFromText,
+          extractHsCodesFromText,
+          analyzeExtractedData,
+        } = await import("./file-processor");
+
         const buffer = Buffer.from(input.fileContent, "base64");
-        const tmpDir = os.tmpdir();
-        const tmpFilePath = path.join(tmpDir, `upload_${Date.now()}_${input.fileName}`);
-        
-        fs.writeFileSync(tmpFilePath, buffer);
-        
-        // Xử lý file
+        const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), "upload-"));
+        const safeFileName = input.fileName || `upload-${Date.now()}`;
+        const tmpFilePath = path.join(tmpDir, safeFileName);
+
+        await fsp.writeFile(tmpFilePath, buffer);
+
+        const uploadedFileId = await saveUploadedFile(
+          ctx.user.id,
+          safeFileName.normalize("NFC"),
+          input.fileType,
+          tmpFilePath,
+          buffer.byteLength,
+        );
+
         let processedData: any = null;
         let extractedText = "";
-        
-        if (input.fileType === "pdf") {
-          extractedText = await processFile(tmpFilePath, input.fileType);
-          processedData = { text: extractedText };
-        } else if (input.fileType === "excel") {
-          processedData = await processFile(tmpFilePath, input.fileType);
-        } else if (input.fileType === "json") {
-          processedData = await processFile(tmpFilePath, input.fileType);
-        } else if (input.fileType === "csv") {
-          processedData = await processFile(tmpFilePath, input.fileType);
-        } else if (input.fileType === "word") {
-          extractedText = await processFile(tmpFilePath, input.fileType);
-          processedData = { text: extractedText };
+
+        switch (input.fileType) {
+          case "pdf":
+          case "word":
+            extractedText = await processFile(tmpFilePath, input.fileType);
+            processedData = { text: extractedText };
+            break;
+          default:
+            processedData = await processFile(tmpFilePath, input.fileType);
+            break;
         }
-        
-        // Trích xuất HS code và dữ liệu quan trọng
-        let extractedData: any = {
-          fileName: input.fileName,
+
+        const extractedData: any = {
+          fileName: safeFileName,
           fileType: input.fileType,
           uploadedAt: new Date(),
           hsCodes: [],
           productNames: [],
           summary: {},
         };
-        
+
         if (extractedText) {
           const keyData = extractKeyDataFromText(extractedText);
           extractedData.hsCodes = keyData.hsCodes;
@@ -238,15 +253,22 @@ const fileUploadRouter = router({
             rowCount: processedData.length,
             columns: processedData.length > 0 ? Object.keys(processedData[0]) : [],
           };
-          
+
           const allText = JSON.stringify(processedData);
           extractedData.hsCodes = extractHsCodesFromText(allText);
         }
-        
-        // Xóa file tạm
-        fs.unlinkSync(tmpFilePath);
-        
-        // Thực hiện AI analysis để gợi ý HS code
+
+        if (uploadedFileId) {
+          await updateUploadedFileStatus(
+            uploadedFileId,
+            "completed",
+            (extractedData.hsCodes?.length ?? 0) + (extractedData.productNames?.length ?? 0),
+          );
+        }
+
+        await fsp.unlink(tmpFilePath).catch(() => undefined);
+        await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+
         let aiAnalysis: any = null;
         try {
           aiAnalysis = await analyzeExtractedData(extractedData, async (prompt: string) => {
@@ -263,12 +285,17 @@ const fileUploadRouter = router({
           console.warn("[API] AI analysis failed, using default suggestions:", error);
           aiAnalysis = await analyzeExtractedData(extractedData);
         }
-        
+
+        if (uploadedFileId) {
+          await saveUploadedFileAnalysis(uploadedFileId, aiAnalysis, extractedData);
+        }
+
         return {
           success: true,
           message: "File uploaded and processed successfully",
-          extractedData: extractedData,
-          aiAnalysis: aiAnalysis,
+          extractedData,
+          aiAnalysis,
+          uploadedFileId,
         };
       } catch (error) {
         console.error("[API] Error uploading file:", error);
@@ -292,10 +319,13 @@ const fileUploadRouter = router({
       }
 
       try {
-        return {
-          files: [],
-          total: 0,
-        };
+        const { files, total } = await getUserUploadedFilesWithTotal(
+          ctx.user.id,
+          input.limit,
+          input.offset,
+        );
+
+        return { files, total };
       } catch (error) {
         console.error("[API] Error fetching uploaded files:", error);
         throw new Error("Failed to fetch uploaded files");
@@ -384,6 +414,7 @@ export const appRouter = router({
   scrapingHistory: scrapingHistoryRouter,
   progress: progressRouter,
   scrapingCharts: scrapingChartsRouter,
+  scraperPipeline: pipelineRouter,
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
@@ -409,11 +440,12 @@ export const appRouter = router({
         })
       )
       .query(async ({ input }) => {
-        const documents = await getDocuments(input.limit, input.offset, input.status);
-        return {
-          documents,
-          total: documents.length,
-        };
+        const { documents, total } = await getDocuments(
+          input.limit,
+          input.offset,
+          input.status,
+        );
+        return { documents, total };
       }),
 
     /**
@@ -437,8 +469,62 @@ export const appRouter = router({
         })
       )
       .query(async ({ input }) => {
-        // TODO: Implement search logic
-        return [];
+        const { documents } = await searchDocuments(input.query, input.limit, 0);
+        return documents;
+      }),
+
+    create: protectedProcedure
+      .input(
+        z.object({
+          documentNumber: z.string().min(1),
+          title: z.string().min(1),
+          documentType: z.string().optional(),
+          issuingAgency: z.string().optional(),
+          issueDate: z.string().optional(),
+          signer: z.string().optional(),
+          fileUrl: z.string().url().optional(),
+          fileName: z.string().optional(),
+          summary: z.string().optional(),
+          detailUrl: z.string().url().optional(),
+          notes: z.string().optional(),
+          tags: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const customsDocId = deriveCustomsDocId(input.detailUrl, input.documentNumber);
+        const tags = input.tags
+          ? input.tags
+              .split(",")
+              .map((tag) => tag.trim())
+              .filter(Boolean)
+          : [];
+
+        const record = await upsertDocument({
+          documentNumber: input.documentNumber.normalize("NFC"),
+          customsDocId,
+          title: input.title.normalize("NFC"),
+          documentType: input.documentType?.normalize("NFC"),
+          issuingAgency: input.issuingAgency?.normalize("NFC"),
+          issueDate: input.issueDate,
+          signer: input.signer?.normalize("NFC"),
+          fileUrl: input.fileUrl,
+          fileName: input.fileName,
+          summary: input.summary?.normalize("NFC"),
+          detailUrl: input.detailUrl,
+          notes: input.notes?.normalize("NFC"),
+          tags: tags.length > 0 ? JSON.stringify(tags) : null,
+          status: "pending",
+          processedStatus: "new",
+        });
+
+        if (!record) {
+          throw new Error("Không thể lưu tài liệu mới");
+        }
+
+        return {
+          success: true,
+          document: record,
+        } as const;
       }),
   }),
 

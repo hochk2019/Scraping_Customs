@@ -1,4 +1,8 @@
-[
+import type { DocumentListItem } from "@/components/DocumentDetailDrawer";
+
+type OfflineDocument = (DocumentListItem & { isOffline: true });
+
+export const offlineDocuments = [
   {
     "id": -1,
     "documentNumber": "32168/TB-CHQ",
@@ -229,4 +233,4 @@
     "processedStatus": "processed",
     "isOffline": true
   }
-]
+] as OfflineDocument[];

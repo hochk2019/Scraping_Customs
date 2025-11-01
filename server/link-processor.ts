@@ -1,6 +1,6 @@
-import axios from "axios";
 import * as pdfParse from "pdf-parse";
-import { extractHsCodesFromText, extractProductNamesFromText, extractKeyDataFromText } from "./file-processor";
+import { extractKeyDataFromText, analyzeExtractedData } from "./file-processor";
+import { getWithNetwork } from "./network-client";
 
 /**
  * Tải và xử lý file PDF từ URL
@@ -16,12 +16,9 @@ export async function downloadAndProcessPdf(
       console.log(`[LinkProcessor] Downloading PDF from ${fileUrl} (attempt ${attempt}/${maxRetries})`);
 
       // Tải file PDF
-      const response = await axios.get(fileUrl, {
+      const response = await getWithNetwork<ArrayBuffer>(fileUrl, {
         responseType: "arraybuffer",
         timeout: 30000,
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        },
       });
 
       const buffer = Buffer.from(response.data);
@@ -74,6 +71,8 @@ export async function processLink(
     textLength: number;
     wordCount: number;
   };
+  aiAnalysis?: any;
+  rawText?: string;
   error?: string;
   processedAt: Date;
 }> {
@@ -95,6 +94,11 @@ export async function processLink(
     // Trích xuất dữ liệu
     const extractedData = extractKeyDataFromText(result.text);
 
+    const aiAnalysis = await analyzeExtractedData({
+      hsCodes: extractedData.hsCodes,
+      productNames: extractedData.productNames,
+    });
+
     return {
       documentNumber,
       documentTitle,
@@ -106,6 +110,8 @@ export async function processLink(
         textLength: extractedData.textLength,
         wordCount: extractedData.wordCount,
       },
+      aiAnalysis,
+      rawText: result.text,
       processedAt: new Date(),
     };
   } catch (error) {

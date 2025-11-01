@@ -1,6 +1,6 @@
-import { eq, and, desc, count, gte, lte, or, like, sql, sum } from "drizzle-orm";
+import { eq, and, desc, count, gte, lte, or, like, sql, sum, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, userFeedback, documents, InsertDocument, scrapeLogs, InsertScrapeLog, scrapeSchedules, InsertScrapeSchedule, exportSelections, extractedData, hsCodes, documentHsCodes, referenceData, uploadedFiles, ocrRepository, InsertOcrRepository, ocrStatistics, InsertOcrStatistics } from "../drizzle/schema";
+import { InsertUser, users, userFeedback, documents, InsertDocument, scrapeLogs, InsertScrapeLog, scrapeSchedules, InsertScrapeSchedule, exportSelections, extractedData, hsCodes, documentHsCodes, referenceData, uploadedFiles, uploadedFileAnalyses, ocrRepository, InsertOcrRepository, ocrStatistics, InsertOcrStatistics } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -92,22 +92,53 @@ export async function getUserByOpenId(openId: string) {
 /**
  * Lấy danh sách tài liệu với phân trang
  */
-export async function getDocuments(limit: number = 20, offset: number = 0, status?: string) {
+export async function getDocuments(
+  limit: number = 20,
+  offset: number = 0,
+  status?: string,
+) {
   const db = await getDb();
-  if (!db) return [];
-
-  let query: any = db.select().from(documents);
-  
-  if (status) {
-    query = query.where(eq(documents.status, status as any));
+  if (!db) {
+    return { documents: [], total: 0 };
   }
-  
-  const result = await query
-    .orderBy((t: any) => t.createdAt)
+
+  const whereClause = status ? eq(documents.status, status as any) : undefined;
+
+  let selectQuery = db.select().from(documents);
+  if (whereClause) {
+    selectQuery = selectQuery.where(whereClause);
+  }
+
+  const dataPromise = selectQuery
+    .orderBy(desc(documents.createdAt))
     .limit(limit)
     .offset(offset);
-  
-  return result;
+
+  let countQuery = db.select({ count: count() }).from(documents);
+  if (whereClause) {
+    countQuery = countQuery.where(whereClause);
+  }
+
+  const [records, countResult] = await Promise.all([dataPromise, countQuery]);
+  const total = Number(countResult[0]?.count ?? 0);
+
+  return {
+    documents: records,
+    total,
+  };
+}
+
+export async function getDocumentsTotal(status?: string) {
+  const db = await getDb();
+  if (!db) return 0;
+
+  let countQuery = db.select({ count: count() }).from(documents);
+  if (status) {
+    countQuery = countQuery.where(eq(documents.status, status as any));
+  }
+
+  const result = await countQuery;
+  return Number(result[0]?.count ?? 0);
 }
 
 /**
@@ -122,8 +153,30 @@ export async function getDocumentById(id: number) {
     .from(documents)
     .where(eq(documents.id, id))
     .limit(1);
-  
-  return result.length > 0 ? result[0] : null;
+
+  if (result.length === 0) {
+    return null;
+  }
+
+  const [document] = result;
+
+  const documentExtractedData = await db
+    .select()
+    .from(extractedData)
+    .where(eq(extractedData.documentId, id));
+
+  return {
+    ...document,
+    extractedData: documentExtractedData.map((item) => ({
+      id: item.id,
+      dataType: item.dataType,
+      value: item.value,
+      confidence: item.confidence,
+      notes: item.notes,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+    })),
+  };
 }
 
 /**
@@ -244,6 +297,22 @@ export async function getScrapeLogs(userId: number, limit: number = 20) {
     .limit(limit);
   
   return result;
+}
+
+/**
+ * Lấy log thu thập mới nhất
+ */
+export async function getLatestScrapeLog() {
+  const db = await getDb();
+  if (!db) return null;
+
+  const result = await db
+    .select()
+    .from(scrapeLogs)
+    .orderBy(desc(scrapeLogs.createdAt))
+    .limit(1);
+
+  return result[0] ?? null;
 }
 
 /**
@@ -547,8 +616,64 @@ export async function searchDocumentsByNotes(query: string, limit: number = 20, 
 }
 
 /**
+ * Tìm kiếm tài liệu theo văn bản chung
+ */
+export async function searchDocuments(
+  query: string,
+  limit: number = 20,
+  offset: number = 0,
+) {
+  const db = await getDb();
+  if (!db) {
+    return { documents: [], total: 0 };
+  }
+
+  const trimmed = query.trim();
+  if (!trimmed) {
+    return { documents: [], total: 0 };
+  }
+
+  const normalized = trimmed.normalize("NFC");
+  const pattern = `%${normalized.replace(/[%_]/g, "\\$&")}%`;
+
+  const condition = or(
+    like(documents.documentNumber, pattern),
+    like(documents.title, pattern),
+    like(documents.summary, pattern),
+    like(documents.issuingAgency, pattern),
+  );
+
+  const [records, totalResult] = await Promise.all([
+    db
+      .select()
+      .from(documents)
+      .where(condition)
+      .orderBy(desc(documents.createdAt))
+      .limit(limit)
+      .offset(offset),
+    db.select({ count: count() }).from(documents).where(condition),
+  ]);
+
+  const total = Number(totalResult[0]?.count ?? 0);
+  return { documents: records, total };
+}
+
+/**
  * Lưu dữ liệu nhận dạng
  */
+export async function clearExtractedData(documentId: number) {
+  const db = await getDb();
+  if (!db) return false;
+
+  try {
+    await db.delete(extractedData).where(eq(extractedData.documentId, documentId));
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to clear extracted data:", error);
+    return false;
+  }
+}
+
 export async function saveExtractedData(documentId: number, dataType: string, value: string, confidence: number = 0) {
   const db = await getDb();
   if (!db) return null;
@@ -581,6 +706,20 @@ export async function getExtractedData(documentId: number) {
   } catch (error) {
     console.error("[Database] Failed to get extracted data:", error);
     return [];
+  }
+}
+
+export async function deleteOcrResultsByDocumentId(documentId: number) {
+  const db = await getDb();
+  if (!db) return false;
+
+  try {
+    await db.delete(ocrRepository).where(eq(ocrRepository.documentId, documentId));
+    await db.delete(ocrStatistics).where(eq(ocrStatistics.documentId, documentId));
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to delete OCR results:", error);
+    return false;
   }
 }
 
@@ -734,7 +873,8 @@ export async function saveUploadedFile(userId: number, originalName: string, fil
       fileSize,
       status: "pending",
     });
-    return result;
+    const insertId = Array.isArray(result) ? (result[0] as any)?.insertId : (result as any)?.insertId;
+    return insertId ?? null;
   } catch (error) {
     console.error("[Database] Failed to save uploaded file:", error);
     return null;
@@ -766,20 +906,130 @@ export async function updateUploadedFileStatus(fileId: number, status: string, e
 /**
  * Lấy danh sách file tải lên của người dùng
  */
-export async function getUserUploadedFiles(userId: number, limit: number = 20, offset: number = 0) {
+export async function getUserUploadedFilesWithTotal(
+  userId: number,
+  limit: number = 20,
+  offset: number = 0,
+) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) {
+    return { files: [], total: 0 };
+  }
 
   try {
-    const result = await db.select().from(uploadedFiles)
-      .where(eq(uploadedFiles.userId, userId))
-      .orderBy(uploadedFiles.createdAt)
-      .limit(limit)
-      .offset(offset);
-    return result;
+    const [files, totalResult] = await Promise.all([
+      db
+        .select()
+        .from(uploadedFiles)
+        .where(eq(uploadedFiles.userId, userId))
+        .orderBy(desc(uploadedFiles.createdAt))
+        .limit(limit)
+        .offset(offset),
+      db
+        .select({ count: count() })
+        .from(uploadedFiles)
+        .where(eq(uploadedFiles.userId, userId)),
+    ]);
+
+    const fileIds = files.map((file) => file.id).filter((id): id is number => typeof id === "number");
+    let analysesByFileId = new Map<number, { analysisJson: string | null; extractedDataJson: string | null }>();
+
+    if (fileIds.length > 0) {
+      const analyses = await db
+        .select({
+          uploadedFileId: uploadedFileAnalyses.uploadedFileId,
+          analysisJson: uploadedFileAnalyses.analysisJson,
+          extractedDataJson: uploadedFileAnalyses.extractedDataJson,
+        })
+        .from(uploadedFileAnalyses)
+        .where(inArray(uploadedFileAnalyses.uploadedFileId, fileIds));
+
+      analysesByFileId = new Map(
+        analyses.map((item) => [item.uploadedFileId, { analysisJson: item.analysisJson, extractedDataJson: item.extractedDataJson }]),
+      );
+    }
+
+    const enrichedFiles = files.map((file) => {
+      const analysis = analysesByFileId.get(file.id ?? 0);
+      let parsedAnalysis: any = null;
+      let parsedExtracted: any = null;
+
+      if (analysis?.analysisJson) {
+        try {
+          parsedAnalysis = JSON.parse(analysis.analysisJson);
+        } catch (error) {
+          console.warn("[Database] Failed to parse uploaded file analysis JSON", error);
+        }
+      }
+
+      if (analysis?.extractedDataJson) {
+        try {
+          parsedExtracted = JSON.parse(analysis.extractedDataJson);
+        } catch (error) {
+          console.warn("[Database] Failed to parse uploaded file extracted data JSON", error);
+        }
+      }
+
+      return {
+        ...file,
+        aiAnalysis: parsedAnalysis,
+        extractedData: parsedExtracted,
+      };
+    });
+
+    const total = Number(totalResult[0]?.count ?? 0);
+    return { files: enrichedFiles, total };
   } catch (error) {
     console.error("[Database] Failed to get user uploaded files:", error);
-    return [];
+    return { files: [], total: 0 };
+  }
+}
+
+export async function getUserUploadedFiles(
+  userId: number,
+  limit: number = 20,
+  offset: number = 0,
+) {
+  const result = await getUserUploadedFilesWithTotal(userId, limit, offset);
+  return result.files;
+}
+
+/**
+ * Lưu hoặc cập nhật kết quả phân tích AI cho file tải lên
+ */
+export async function saveUploadedFileAnalysis(
+  uploadedFileId: number,
+  analysis: unknown,
+  extractedDataPayload?: unknown,
+) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot save uploaded file analysis: database not available");
+    return null;
+  }
+
+  try {
+    const payload = {
+      uploadedFileId,
+      analysisJson: analysis ? JSON.stringify(analysis) : null,
+      extractedDataJson: extractedDataPayload ? JSON.stringify(extractedDataPayload) : null,
+    };
+
+    await db
+      .insert(uploadedFileAnalyses)
+      .values(payload)
+      .onDuplicateKeyUpdate({
+        set: {
+          analysisJson: payload.analysisJson,
+          extractedDataJson: payload.extractedDataJson,
+          updatedAt: new Date(),
+        },
+      });
+
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to save uploaded file analysis:", error);
+    return null;
   }
 }
 

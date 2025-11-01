@@ -1,241 +1,157 @@
-import { useState } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { BarChart3, FileText, Search, TrendingUp } from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { ArrowRight, CalendarClock, FileText, History, UploadCloud, BookOpenCheck } from "lucide-react";
 import HsCodeSearch from "@/components/HsCodeSearch";
 import RecentDocumentsSidebar from "@/components/RecentDocumentsSidebar";
-import { ScraperForm } from "@/components/ScraperForm";
+import MainLayout from "@/layouts/MainLayout";
+import ScraperStatusCard from "@/components/ScraperStatusCard";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 
 export default function Home() {
   const [, setLocation] = useLocation();
 
+  const quickActions = [
+    {
+      label: "Tạo lịch thu thập",
+      description: "Thiết lập cron tự động cho scraper",
+      icon: CalendarClock,
+      action: () => setLocation("/schedules"),
+    },
+    {
+      label: "Tải lên tài liệu",
+      description: "Đồng bộ file PDF và Excel vào hệ thống",
+      icon: UploadCloud,
+      action: () => setLocation("/documents-upload"),
+    },
+    {
+      label: "Xem lịch sử OCR",
+      description: "Theo dõi trạng thái xử lý gần đây",
+      icon: History,
+      action: () => setLocation("/dashboard"),
+    },
+    {
+      label: "Gửi phản hồi",
+      description: "Thu thập ý kiến nội bộ để ưu tiên tính năng",
+      icon: FileText,
+      action: () => setLocation("/feedback-admin"),
+    },
+    {
+      label: "Hướng dẫn sử dụng",
+      description: "Tổng hợp quy trình, mẹo và tài nguyên hỗ trợ",
+      icon: BookOpenCheck,
+      action: () => setLocation("/huong-dan"),
+    },
+  ];
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
-      {/* Header */}
-      <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur-sm">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-blue-600 flex items-center justify-center">
-              <FileText className="h-6 w-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">Hải Quan Việt Nam</h1>
-              <p className="text-xs text-gray-600">Thu thập & Phân tích dữ liệu</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              onClick={() => setLocation("/dashboard")}
-            >
-              Quản lý tài liệu
-            </Button>
-            <Button
-              onClick={() => setLocation("/hs-code-lookup")}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              Tra cứu HS Code
-            </Button>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="container mx-auto px-4 py-12">
-        {/* Hero Section */}
-        <div className="mb-12 text-center">
-          <h2 className="text-4xl font-bold text-gray-900 mb-4">
-            Tra Cứu HS Code Nhanh Chóng & Chính Xác
-          </h2>
-          <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-            Tìm kiếm mã HS code, biểu thuế, và thông tin hàng hóa từ cơ sở dữ liệu Hải quan Việt Nam
-          </p>
-        </div>
-
-        {/* Main Content with Sidebar */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-12">
-          <div className="lg:col-span-2">
-            {/* Search Section */}
-            <HsCodeSearch />
-          </div>
-          <div>
-            {/* Recent Documents Sidebar */}
-            <RecentDocumentsSidebar />
-          </div>
-        </div>
-
-        {/* Scraper Form Section */}
-        <div className="mb-12">
-          <h3 className="text-2xl font-bold text-gray-900 mb-6">Thu Thập Dữ Liệu Tự Động</h3>
-          <ScraperForm />
-        </div>
-
-        {/* Features Section */}
-        <div className="mb-12">
-          <h3 className="text-2xl font-bold text-gray-900 mb-6">Tính Năng Chính</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Card className="hover:shadow-lg transition-shadow">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Search className="h-5 w-5 text-blue-600" />
-                  Tra Cứu HS Code
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-gray-600">
-                  Tìm kiếm theo mã code hoặc tên hàng hóa với kết quả chính xác
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="hover:shadow-lg transition-shadow">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <FileText className="h-5 w-5 text-green-600" />
-                  Tải Lên Tài Liệu
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-gray-600">
-                  Tải lên file Excel, PDF, Word để trích xuất HS code tự động
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="hover:shadow-lg transition-shadow">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <BarChart3 className="h-5 w-5 text-purple-600" />
-                  Phân Tích AI
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-gray-600">
-                  Gợi ý HS code dựa trên trí tuệ nhân tạo với độ tin cậy cao
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="hover:shadow-lg transition-shadow">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <TrendingUp className="h-5 w-5 text-orange-600" />
-                  Thống Kê Thời Gian Thực
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-gray-600">
-                  Xem biểu đồ thống kê hiệu suất xử lý OCR và phân tích
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-
-        {/* Info Section */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
-          <Card>
-            <CardHeader>
-              <CardTitle>HS Code là gì?</CardTitle>
-              <CardDescription>Mã phân loại hàng hóa quốc tế</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-sm text-gray-700">
-                HS Code (Harmonized System Code) là mã phân loại hàng hóa quốc tế được sử dụng trong thương mại và hải quan.
-              </p>
-              <p className="text-sm text-gray-700">
-                Mỗi mã HS code gồm 6 chữ số cơ bản, có thể được mở rộng thành 8 hoặc 10 chữ số tùy theo quốc gia.
-              </p>
-              <p className="text-sm text-gray-700">
-                Ví dụ: 6204.62.20 - Áo sơ mi, áo khoác nữ
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Cách Sử Dụng</CardTitle>
-              <CardDescription>Hướng dẫn nhanh</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex gap-3">
-                <div className="flex-shrink-0 h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold text-sm">
-                  1
-                </div>
-                <div>
-                  <p className="font-medium text-sm">Tìm kiếm</p>
-                  <p className="text-xs text-gray-600">Nhập mã HS code hoặc tên hàng</p>
-                </div>
-              </div>
-              <div className="flex gap-3">
-                <div className="flex-shrink-0 h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold text-sm">
-                  2
-                </div>
-                <div>
-                  <p className="font-medium text-sm">Xem kết quả</p>
-                  <p className="text-xs text-gray-600">Hiển thị thông tin chi tiết</p>
-                </div>
-              </div>
-              <div className="flex gap-3">
-                <div className="flex-shrink-0 h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold text-sm">
-                  3
-                </div>
-                <div>
-                  <p className="font-medium text-sm">Sử dụng dữ liệu</p>
-                  <p className="text-xs text-gray-600">Biểu thuế, mô tả, thông tin khác</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* CTA Section */}
-        <div className="bg-blue-600 rounded-lg p-8 text-center text-white">
-          <h3 className="text-2xl font-bold mb-3">Sẵn Sàng Bắt Đầu?</h3>
-          <p className="mb-6 text-blue-100">
-            Đăng nhập để truy cập tất cả tính năng quản lý tài liệu, phân tích AI, và thống kê thời gian thực
-          </p>
-          <Button
-            size="lg"
-            variant="secondary"
-            onClick={() => setLocation("/dashboard")}
-          >
-            Truy Cập Dashboard
+    <MainLayout
+      title="Công văn phân tích phân loại mới nhất"
+      description="Theo dõi, lọc và truy cập nhanh các công văn từ Tổng cục Hải quan. Hệ thống đã chuẩn hóa Unicode để hiển thị tiếng Việt chính xác."
+      actions={
+        <>
+          <Button onClick={() => setLocation("/")} className="gap-2">
+            <FileText className="h-4 w-4" />
+            Tra cứu HS Code
           </Button>
-        </div>
-      </main>
+          <Button
+            variant="secondary"
+            onClick={() => setLocation("/documents-upload")}
+            className="gap-2"
+          >
+            <UploadCloud className="h-4 w-4" />
+            Đồng bộ tài liệu
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
+        <section className="space-y-6">
+          <RecentDocumentsSidebar variant="table" pageSize={8} limit={80} />
+        </section>
 
-      {/* Footer */}
-      <footer className="border-t bg-gray-50 mt-12">
-        <div className="container mx-auto px-4 py-8">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
-            <div>
-              <h4 className="font-semibold text-gray-900 mb-3">Về Ứng Dụng</h4>
-              <p className="text-sm text-gray-600">
-                Nền tảng tự động thu thập, phân tích, và tra cứu dữ liệu hải quan Việt Nam
-              </p>
-            </div>
-            <div>
-              <h4 className="font-semibold text-gray-900 mb-3">Tính Năng</h4>
-              <ul className="space-y-2 text-sm text-gray-600">
-                <li>Tra cứu HS code</li>
-                <li>Tải lên & phân tích</li>
-                <li>Dashboard thống kê</li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-semibold text-gray-900 mb-3">Hỗ Trợ</h4>
-              <p className="text-sm text-gray-600">
-                Liên hệ Manus AI để được hỗ trợ
-              </p>
-            </div>
-          </div>
-          <div className="border-t pt-8 text-center text-sm text-gray-600">
-            <p>© 2025 Hải Quan Việt Nam. Powered by Manus.</p>
-          </div>
-        </div>
-      </footer>
-    </div>
+        <aside className="space-y-6">
+          <Card className="border shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle>Tác vụ nhanh</CardTitle>
+              <CardDescription>Điều hướng tới các trang quản trị và hỗ trợ chính</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {quickActions.map((action) => (
+                <Button
+                  key={action.label}
+                  variant="outline"
+                  className="flex w-full items-start gap-3 border-slate-200 py-3 text-left"
+                  onClick={action.action}
+                >
+                  <action.icon className="h-5 w-5 text-blue-600" />
+                  <span className="flex-1">
+                    <span className="block text-sm font-semibold text-slate-900">
+                      {action.label}
+                    </span>
+                    <span className="block text-xs text-slate-500">
+                      {action.description}
+                    </span>
+                  </span>
+                  <ArrowRight className="h-4 w-4 text-slate-400" />
+                </Button>
+              ))}
+            </CardContent>
+          </Card>
+
+          <ScraperStatusCard />
+
+          <Card className="border shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle>Hỗ trợ sử dụng</CardTitle>
+              <CardDescription>
+                Những câu hỏi thường gặp và hướng dẫn nhanh để bạn bắt đầu
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Accordion type="single" collapsible className="w-full">
+                <AccordionItem value="intro">
+                  <AccordionTrigger className="text-sm font-medium text-slate-900">
+                    Quy trình thu thập dữ liệu
+                  </AccordionTrigger>
+                  <AccordionContent className="text-xs text-slate-600">
+                    Hệ thống tự động duyệt danh sách công văn, truy cập trang chi tiết để lấy liên kết PDF và lưu vào cơ sở dữ liệu. Kết quả được OCR và chuẩn hóa Unicode trước khi hiển thị.
+                  </AccordionContent>
+                </AccordionItem>
+                <AccordionItem value="ocr">
+                  <AccordionTrigger className="text-sm font-medium text-slate-900">
+                    Xử lý OCR tiếng Việt
+                  </AccordionTrigger>
+                  <AccordionContent className="text-xs text-slate-600">
+                    Mọi tệp PDF được đồng bộ sẽ đi qua pipeline OCR hỗ trợ tiếng Việt. Bạn có thể kiểm tra lịch sử tại mục "Xem lịch sử OCR" để theo dõi tiến độ.
+                  </AccordionContent>
+                </AccordionItem>
+                <AccordionItem value="filters">
+                  <AccordionTrigger className="text-sm font-medium text-slate-900">
+                    Mẹo lọc công văn hiệu quả
+                  </AccordionTrigger>
+                  <AccordionContent className="text-xs text-slate-600">
+                    Sử dụng bộ lọc theo cơ quan và loại văn bản ở bảng bên trái. Kết hợp ô tìm kiếm với khoảng thời gian để thu hẹp kết quả chính xác nhất.
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
+            </CardContent>
+          </Card>
+
+          <HsCodeSearch />
+        </aside>
+      </div>
+    </MainLayout>
   );
 }

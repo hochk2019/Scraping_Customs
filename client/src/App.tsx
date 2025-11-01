@@ -11,18 +11,25 @@ import FeedbackAdmin from "./pages/FeedbackAdmin";
 import AdminPage from "@/pages/AdminPage";
 import HsCodeLookup from "@/pages/HsCodeLookup";
 import DocumentsUpload from "@/pages/DocumentsUpload";
+import Overview from "@/pages/Overview";
+import Guide from "@/pages/Guide";
+import Features from "@/pages/Features";
 
 function Router() {
   // make sure to consider if you need authentication for certain routes
   return (
     <Switch>
-      <Route path={"\\"} component={Home} />
+      <Route path="/" component={HsCodeLookup} />
+      <Route path="/cong-van-moi" component={Home} />
+      <Route path="/tong-quan" component={Overview} />
       <Route path={"/dashboard"} component={Dashboard} />
       <Route path={"/schedules"} component={ScheduleManager} />
       <Route path={"/feedback-admin"} component={FeedbackAdmin} />
       <Route path={"/admin"} component={AdminPage} />
       <Route path={"/hs-code-lookup"} component={HsCodeLookup} />
       <Route path={"/documents-upload"} component={DocumentsUpload} />
+      <Route path="/huong-dan" component={Guide} />
+      <Route path="/tinh-nang" component={Features} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />
@@ -40,7 +47,7 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider
         defaultTheme="light"
-        // switchable
+        switchable
       >
         <TooltipProvider>
           <Toaster />

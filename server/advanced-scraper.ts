@@ -1,7 +1,6 @@
 import puppeteer from "puppeteer";
 import type { Browser, Page } from "puppeteer";
-import axios from "axios";
-import { retryWithBackoff, RetryOptions } from "./retry-utils";
+import { getWithNetwork } from "./network-client";
 
 /**
  * Advanced Web Scraper cho trang Hải quan Việt Nam
@@ -220,23 +219,29 @@ export async function scrapeByDateRange(
       await waitForResultRows(page);
 
       // Chuyển sang trang tiếp theo
-      const hasNextPage = await page.evaluate(() => {
-        const links = Array.from(document.querySelectorAll('a'));
-        const nextLink = links.find(link => link.textContent?.includes('>>'));
-        return nextLink ? true : false;
+      const nextPageHref = await page.evaluate(() => {
+        const anchorCandidates = Array.from(
+          document.querySelectorAll<HTMLAnchorElement>("a")
+        );
+
+        const nextAnchor = anchorCandidates.find((link) => {
+          const text = link.textContent?.trim();
+          if (!text) return false;
+          return text === ">>" || text.toLowerCase().includes("sau");
+        });
+
+        return nextAnchor?.getAttribute("href") ?? null;
       });
 
-      if (!hasNextPage) break;
+      if (!nextPageHref) {
+        console.log("[Scraper] Không tìm thấy trang tiếp theo, dừng lại");
+        break;
+      }
 
-      console.log("[Scraper] Chuyển sang trang tiếp theo");
-      await page.evaluate(() => {
-        const links = Array.from(document.querySelectorAll('a'));
-        const nextLink = links.find(link => link.textContent?.includes('>>'));
-        if (nextLink) {
-          nextLink.click();
-        }
-      });
-      await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 60000 });
+      const nextPageUrl = new URL(nextPageHref, listUrl || CUSTOMS_BASE_URL).toString();
+      console.log(`[Scraper] Chuyển sang trang tiếp theo: ${nextPageUrl}`);
+
+      await page.goto(nextPageUrl, { waitUntil: "networkidle2", timeout: 60000 });
       await waitForResultRows(page);
 
       currentPage++;
@@ -266,16 +271,132 @@ async function fillDateRange(
   fromDate: string,
   toDate: string
 ): Promise<void> {
-  // Tìm các input date
-  const dateInputs = await page.$$("input[type='date']");
+  const isoFrom = convertToIsoDate(fromDate);
+  const isoTo = convertToIsoDate(toDate);
 
-  if (dateInputs.length >= 2) {
-    // Điền từ ngày
-    await dateInputs[0].type(fromDate.replace(/\//g, "-"), { delay: 50 });
+  const slashFrom = normalizeSlashDate(fromDate);
+  const slashTo = normalizeSlashDate(toDate);
 
-    // Điền đến ngày
-    await dateInputs[1].type(toDate.replace(/\//g, "-"), { delay: 50 });
+  const filledCount = await page.evaluate(
+    ({ isoFrom, isoTo, slashFrom, slashTo }) => {
+      const setValue = (input: HTMLInputElement, value: string) => {
+        input.focus();
+        input.value = value;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+      };
+
+      const inputs = Array.from(
+        document.querySelectorAll<HTMLInputElement>("input")
+      );
+
+      const pickers = inputs.filter((input) =>
+        /date|text/i.test(input.type || "")
+      );
+
+      let filled = 0;
+
+      for (const input of pickers) {
+        if (filled >= 2) break;
+
+        const labelText =
+          input.getAttribute("placeholder")?.toLowerCase() || "";
+        const name = input.getAttribute("name")?.toLowerCase() || "";
+        const id = (input.id || "").toLowerCase();
+        const targetValue =
+          filled === 0
+            ? input.type === "date"
+              ? isoFrom
+              : slashFrom
+            : input.type === "date"
+              ? isoTo
+              : slashTo;
+
+        if (
+          input.type === "date" ||
+          /từ|from|start|tu_ngay/.test(labelText + name + id) ||
+          filled === 1 ||
+          /đến|to|end|den_ngay/.test(labelText + name + id)
+        ) {
+          setValue(input, targetValue);
+          filled += 1;
+        }
+      }
+
+      return filled;
+    },
+    { isoFrom, isoTo, slashFrom, slashTo }
+  );
+
+  if (filledCount >= 2) {
+    return;
   }
+
+  // Fallback: type trực tiếp nếu script trên không tìm thấy đủ input
+  const dateInputs = await page.$$("input[type='date']");
+  if (dateInputs.length >= 2) {
+    await page.evaluate(
+      ({ isoFrom, isoTo }) => {
+        const inputs = Array.from(
+          document.querySelectorAll<HTMLInputElement>("input[type='date']")
+        );
+        if (inputs[0]) {
+          inputs[0].value = isoFrom;
+          inputs[0].dispatchEvent(new Event("input", { bubbles: true }));
+          inputs[0].dispatchEvent(new Event("change", { bubbles: true }));
+        }
+        if (inputs[1]) {
+          inputs[1].value = isoTo;
+          inputs[1].dispatchEvent(new Event("input", { bubbles: true }));
+          inputs[1].dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      },
+      { isoFrom, isoTo }
+    );
+    return;
+  }
+
+  const textInputs = await page.$$("input[type='text']");
+  if (textInputs.length >= 2) {
+    await page.evaluate(
+      ({ slashFrom, slashTo }) => {
+        const inputs = Array.from(
+          document.querySelectorAll<HTMLInputElement>("input[type='text']")
+        );
+        if (inputs[0]) {
+          inputs[0].value = slashFrom;
+          inputs[0].dispatchEvent(new Event("input", { bubbles: true }));
+          inputs[0].dispatchEvent(new Event("change", { bubbles: true }));
+        }
+        if (inputs[1]) {
+          inputs[1].value = slashTo;
+          inputs[1].dispatchEvent(new Event("input", { bubbles: true }));
+          inputs[1].dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      },
+      { slashFrom, slashTo }
+    );
+  }
+}
+
+function convertToIsoDate(date: string): string {
+  const [day, month, year] = date.split("/");
+  if (!day || !month || !year) {
+    return date;
+  }
+  const paddedDay = day.padStart(2, "0");
+  const paddedMonth = month.padStart(2, "0");
+  return `${year}-${paddedMonth}-${paddedDay}`;
+}
+
+function normalizeSlashDate(date: string): string {
+  const [day, month, year] = date.split("/");
+  if (!day || !month || !year) {
+    return date;
+  }
+  const paddedDay = day.padStart(2, "0");
+  const paddedMonth = month.padStart(2, "0");
+  return `${paddedDay}/${paddedMonth}/${year}`;
 }
 
 /**
@@ -326,21 +447,21 @@ async function scrapeDetailPage(
     let hsCodes: string[] = [];
     let productNames: string[] = [];
 
-    if (documentData.fileUrl) {
-      const fullFileUrl = documentData.fileUrl.startsWith("http")
-        ? documentData.fileUrl
-        : `${CUSTOMS_BASE_URL}${documentData.fileUrl}`;
+    const resolvedFileUrl = documentData.fileUrl
+      ? new URL(documentData.fileUrl, CUSTOMS_BASE_URL).toString()
+      : "";
 
+    if (resolvedFileUrl) {
       try {
         // Tải PDF
-        const pdfBuffer = await downloadPdf(fullFileUrl);
+        const pdfBuffer = await downloadPdf(resolvedFileUrl);
 
         // Xử lý OCR (sẽ được xử lý bởi ocr-processor.ts)
         // extractedText = await extractTextFromPdf(pdfBuffer);
         // hsCodes = extractHsCodesFromText(extractedText);
         // productNames = extractProductNamesFromText(extractedText);
       } catch (error) {
-        console.error(`[Scraper] Lỗi tải PDF: ${fullFileUrl}`, error);
+        console.error(`[Scraper] Lỗi tải PDF: ${resolvedFileUrl}`, error);
       }
     }
 
@@ -351,7 +472,7 @@ async function scrapeDetailPage(
       issuingAgency: documentData.issuingAgency || "Cục Hải quan",
       issueDate: documentData.issueDate || "",
       signer: documentData.signer || "",
-      fileUrl: documentData.fileUrl || "",
+      fileUrl: resolvedFileUrl,
       fileName: documentData.fileName || "",
       detailUrl,
       extractedText,
@@ -373,13 +494,9 @@ async function downloadPdf(url: string): Promise<Buffer> {
   try {
     console.log(`[Scraper] Tải PDF từ: ${url}`);
 
-    const response = await axios.get(url, {
+    const response = await getWithNetwork<ArrayBuffer>(url, {
       responseType: "arraybuffer",
       timeout: 30000, // 30 seconds
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      },
     });
 
     console.log(`[Scraper] Tải PDF thành công: ${url}`);
